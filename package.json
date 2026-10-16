@@ -1,0 +1,46 @@
+{
+  "name": "rhythm-canvas",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Rhythm Canvas Windows rhythm chart editor",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:images": "node scripts/e2e-images.mjs",
+    "test:edits": "node scripts/e2e-edits.mjs",
+    "test:stress": "node scripts/e2e-images.mjs --stress",
+    "build": "electron-vite build",
+    "check": "npm run typecheck && npm test && npm run build",
+    "format": "prettier --write \"src/**/*.{ts,vue,css,html}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" \"*.json\" \"*.ts\""
+  },
+  "dependencies": {
+    "ag-psd": "^31.0.3",
+    "pixi.js": "8.22.0",
+    "pngjs": "^7.0.0",
+    "vue": "3.5.44",
+    "wavesurfer.js": "8.0.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/pngjs": "^6.0.5",
+    "@vitejs/plugin-vue": "6.0.10",
+    "electron": "44.8.0",
+    "electron-vite": "6.0.0",
+    "playwright": "1.64.1",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.5",
+    "vue-tsc": "3.3.13"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

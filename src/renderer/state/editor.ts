@@ -1,0 +1,469 @@
+import { computed, ref, shallowRef } from 'vue';
+import { EditHistory, type EditCommand } from '../../application/history';
+import { FrameRecorder } from '../../core/performance';
+import { ResourcePool } from '../../core/resources';
+import { TempoMap } from '../../core/timing';
+import { createProject, type Project, type Size, type Vec2 } from '../../shared/models';
+import type { ImageImport, ImageImportProgress } from '../../shared/images';
+import { inverse, isLocked, parents, point, worldMatrix } from '../../core/layers';
+import { unwrap, type ProcessSample, type ProjectSession } from '../../shared/ipc';
+import { AudioTransport } from '../audio/transport';
+import type { EditorStage } from '../canvas/stage';
+
+export function createEditor() {
+  let history = new EditHistory(createProject());
+  const project = shallowRef(history.current);
+  const session = shallowRef<ProjectSession | null>(null);
+  const busy = ref(false),
+    dirty = ref(false),
+    canUndo = ref(false),
+    canRedo = ref(false);
+  const notice = ref({
+    text: '正在准备编辑器…',
+    kind: 'info' as 'info' | 'error' | 'success' | 'warning',
+  });
+  const resources = new ResourcePool();
+  const transport = new AudioTransport(resources);
+  const buffer = shallowRef<AudioBuffer | null>(null);
+  const playback = ref(transport.snapshot());
+  const frameRecorder = new FrameRecorder();
+  const performanceSample = shallowRef<ProcessSample | null>(null);
+  const performanceHistory: ProcessSample[] = [];
+  const fps = ref(0);
+  const stage = shallowRef<EditorStage | null>(null);
+  const zoom = ref(1);
+  const selectedLayerId = ref<string | null>(null);
+  const selectedLayer = computed(() =>
+    selectedLayerId.value ? project.value.layers[selectedLayerId.value] : undefined,
+  );
+  const imageProgress = shallowRef<ImageImportProgress | null>(null);
+  const lastImport = shallowRef<ImageImport | null>(null);
+  const importWarnings = ref<string[]>([]);
+  const sceneRevision = ref(0);
+  let removeProgress: (() => void) | undefined;
+  let dragProject: Project | null = null;
+  const confirmReplacement = shallowRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(
+    null,
+  );
+  let raf = 0,
+    sampleTimer: ReturnType<typeof setInterval> | undefined;
+  let lastUIFrame = 0,
+    lastFPS = 0;
+  const tempo = computed(() => new TempoMap(project.value.timing));
+  const music = computed(() =>
+    project.value.music ? project.value.assets[project.value.music.assetId] : undefined,
+  );
+
+  function notify(text: string, kind: 'info' | 'error' | 'success' | 'warning' = 'info'): void {
+    notice.value = { text, kind };
+  }
+  function refresh(): void {
+    const next = transport.snapshot();
+    if (
+      Object.keys(next).some(
+        (key) => next[key as keyof typeof next] !== playback.value[key as keyof typeof next],
+      )
+    )
+      playback.value = next;
+  }
+  function publish(): void {
+    project.value = history.current;
+    dirty.value = history.dirty;
+    canUndo.value = history.canUndo;
+    canRedo.value = history.canRedo;
+    transport.setGain(project.value.music?.gain ?? 0.8);
+    if (selectedLayerId.value && !project.value.layers[selectedLayerId.value]) selectLayer(null);
+    if (session.value) stage.value?.setScene(project.value, session.value.handle);
+    if (session.value)
+      void window.desktop.setDirty({ handle: session.value.handle, dirty: dirty.value });
+  }
+  async function run<T>(operation: () => Promise<T>): Promise<T | undefined> {
+    if (busy.value) return;
+    busy.value = true;
+    try {
+      return await operation();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '操作失败，请重试', 'error');
+      return undefined;
+    } finally {
+      busy.value = false;
+      refresh();
+    }
+  }
+  function edit(command: EditCommand): void {
+    if (busy.value) return;
+    try {
+      history.execute(command);
+      publish();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '输入值无效', 'error');
+    }
+  }
+  async function syncMusic(): Promise<void> {
+    if (!session.value) return;
+    const asset = music.value;
+    if (!asset) {
+      transport.unload();
+      buffer.value = null;
+      refresh();
+      return;
+    }
+    if (transport.assetId === asset.id) {
+      transport.setGain(project.value.music?.gain ?? 0.8);
+      return;
+    }
+    const bytes = unwrap(
+      await window.desktop.readAsset({ handle: session.value.handle, assetId: asset.id }),
+    );
+    const prepared = await transport.prepare(asset, bytes);
+    transport.adopt(prepared);
+    transport.setGain(project.value.music?.gain ?? 0.8);
+    buffer.value = transport.buffer;
+    refresh();
+  }
+  async function adopt(next: ProjectSession): Promise<void> {
+    const previous = session.value;
+    transport.unload();
+    buffer.value = null;
+    history = new EditHistory(next.project);
+    session.value = next;
+    selectLayer(null);
+    lastImport.value = null;
+    importWarnings.value = Object.values(next.project.sourceDocuments).flatMap(
+      (source) => source.warnings ?? [],
+    );
+    publish();
+    stage.value?.setArtwork(next.project.stage.artworkSize, true);
+    if (previous) unwrap(await window.desktop.closeSession(previous.handle));
+    if (next.warnings.length) notify(next.warnings.join('；'), 'warning');
+    else notify(next.filePath ? '工程已打开' : '新工程已准备好，可以导入音乐', 'success');
+    try {
+      await syncMusic();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '音乐加载失败', 'warning');
+    }
+  }
+  async function save(saveAs = false): Promise<boolean> {
+    if (!session.value) return false;
+    const result = unwrap(
+      await window.desktop.saveProject({
+        handle: session.value.handle,
+        project: project.value,
+        saveAs,
+      }),
+    );
+    if (!result) return false;
+    session.value = { ...session.value, filePath: result.filePath };
+    history.markSaved();
+    publish();
+    notify('工程和素材已保存', 'success');
+    return true;
+  }
+  async function allowReplacement(): Promise<boolean> {
+    if (!dirty.value) return true;
+    const choice = await new Promise<'save' | 'discard' | 'cancel'>((resolve) => {
+      confirmReplacement.value = resolve;
+    });
+    confirmReplacement.value = null;
+    if (choice === 'cancel') return false;
+    if (choice === 'save') return save();
+    return true;
+  }
+  async function newDocument(name: string, size: Size): Promise<boolean> {
+    return (
+      (await run(async () => {
+        if (!(await allowReplacement())) return false;
+        const document = createProject(name, size);
+        await adopt(unwrap(await window.desktop.newProject(document)));
+        return true;
+      })) ?? false
+    );
+  }
+  async function open(): Promise<void> {
+    await run(async () => {
+      if (!(await allowReplacement())) return;
+      const next = unwrap(await window.desktop.openProject());
+      if (next) await adopt(next);
+    });
+  }
+  async function importMusic(): Promise<void> {
+    await run(async () => {
+      if (!session.value) return;
+      const handle = session.value.handle;
+      const asset = unwrap(await window.desktop.importMusic(handle));
+      if (!asset) return;
+      notify('正在解码音乐并准备波形…');
+      try {
+        const bytes = unwrap(await window.desktop.readAsset({ handle, assetId: asset.id }));
+        const prepared = await transport.prepare(asset, bytes);
+        try {
+          history.execute({ type: 'set-music', asset: { ...asset, audio: prepared.metadata } });
+        } catch (error) {
+          prepared.lease.release();
+          throw error;
+        }
+        transport.adopt(prepared);
+        buffer.value = transport.buffer;
+        publish();
+        notify(`已导入 ${asset.originalName}`, 'success');
+      } catch (error) {
+        await window.desktop.discardImport({ handle, assetId: asset.id });
+        throw error;
+      }
+    });
+  }
+  async function importImage(): Promise<void> {
+    await run(async () => {
+      if (!session.value) return;
+      pause();
+      imageProgress.value = {
+        handle: session.value.handle,
+        phase: '选择图片素材',
+        completed: 0,
+        total: 0,
+      };
+      try {
+        const imported = unwrap(
+          await window.desktop.importImage({
+            handle: session.value.handle,
+            tileSize: Math.min(1024, stage.value?.capabilities?.maxTextureSize ?? 1024),
+          }),
+        );
+        if (!imported) return;
+        const wasEmpty = Object.keys(project.value.layers).length === 0;
+        history.execute({ type: 'import-image', imported });
+        lastImport.value = imported;
+        importWarnings.value = imported.warnings;
+        publish();
+        if (wasEmpty) stage.value?.setArtwork(project.value.stage.artworkSize, true);
+        selectLayer(imported.rootLayersBottomToTop.at(-1) ?? null);
+        notify(
+          `已导入 ${imported.name}：${imported.metrics.rasterLayers} 个像素图层、${imported.metrics.groups} 个分组，耗时 ${(imported.metrics.elapsedMs / 1000).toFixed(2)} 秒${imported.warnings.length ? '（请查看兼容提示）' : ''}`,
+          imported.warnings.length ? 'warning' : 'success',
+        );
+      } finally {
+        imageProgress.value = null;
+      }
+    });
+  }
+  function selectLayer(id: string | null): void {
+    selectedLayerId.value = id;
+    stage.value?.select(id);
+  }
+  function moveSelected(id: string, delta: Vec2, commit: boolean): void {
+    if (busy.value || isLocked(history.current, id)) return;
+    dragProject ??= history.current;
+    const layer = dragProject.layers[id];
+    const parentId = parents(dragProject).get(id) ?? null;
+    const inv = inverse(worldMatrix(dragProject, parentId)),
+      zero = point(inv, { x: 0, y: 0 }),
+      offset = point(inv, delta);
+    const transform = {
+      ...layer.transform,
+      position: {
+        x: layer.transform.position.x + offset.x - zero.x,
+        y: layer.transform.position.y + offset.y - zero.y,
+      },
+    };
+    if (commit) {
+      dragProject = null;
+      edit({ type: 'set-layer', id, patch: { transform } });
+      if (session.value) stage.value?.setScene(project.value, session.value.handle);
+    } else if (session.value) {
+      // Live drag changes rendering only. A single undoable edit is committed on pointer release.
+      stage.value?.setScene(
+        { ...dragProject, layers: { ...dragProject.layers, [id]: { ...layer, transform } } },
+        session.value.handle,
+      );
+    }
+  }
+  async function travel(direction: 'undo' | 'redo'): Promise<void> {
+    await run(async () => {
+      const oldAssetId = transport.assetId;
+      history[direction]();
+      publish();
+      if (oldAssetId !== (project.value.music?.assetId ?? null)) {
+        transport.unload();
+        buffer.value = null;
+      }
+      await syncMusic();
+    });
+  }
+  function deleteSelectedLayer(): void {
+    const id = selectedLayerId.value;
+    if (id) edit({ type: 'delete-layer', id });
+  }
+  async function deleteAudio(assetId: string): Promise<void> {
+    await run(async () => {
+      history.execute({ type: 'delete-audio', assetId });
+      publish();
+      await syncMusic();
+      notify('音频已删除，可通过撤销恢复', 'success');
+    });
+  }
+  async function togglePlay(): Promise<void> {
+    if (busy.value) return;
+    try {
+      if (transport.snapshot().playing) transport.pause();
+      else await transport.play();
+      refresh();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '无法播放音乐', 'error');
+    }
+  }
+  function seek(timeUs: number): void {
+    transport.seek(timeUs);
+    refresh();
+  }
+  function pause(): void {
+    transport.pause();
+    refresh();
+  }
+  function fit(): void {
+    stage.value?.fit();
+  }
+  function setZoom(value: number): void {
+    stage.value?.setZoom(value);
+  }
+  async function exportPerformance(): Promise<void> {
+    await run(async () => {
+      const report = {
+        format: 'rhythm-canvas-performance',
+        version: 1,
+        recordedAt: new Date().toISOString(),
+        stage: 2,
+        limitations: [
+          '单次报告只代表所打开的工程和采样窗口；真实美术与合成测试必须分别比较',
+          '帧率为界面 requestAnimationFrame 间隔统计',
+          '纹理占用为受管资源核算，未计入驱动和 PixiJS 内部资源',
+          '屏幕缓冲占用为单个 RGBA 缓冲估算，非总显存',
+        ],
+        project: {
+          id: project.value.id,
+          artworkSize: project.value.stage.artworkSize,
+          output: project.value.output,
+          layers: Object.keys(project.value.layers).length,
+        },
+        frames: frameRecorder.snapshot(),
+        resources: resources.stats(),
+        graphics: stage.value?.metrics() ?? null,
+        lastImageImport: lastImport.value
+          ? {
+              name: lastImport.value.name,
+              size: lastImport.value.size,
+              metrics: lastImport.value.metrics,
+              warnings: lastImport.value.warnings,
+            }
+          : null,
+        audio: transport.snapshot(),
+        processes: performanceHistory,
+      };
+      const file = unwrap(await window.desktop.exportPerformance(JSON.stringify(report, null, 2)));
+      if (file) notify(`性能记录已保存：${file}`, 'success');
+    });
+  }
+  function frame(timestamp: number): void {
+    if (document.hidden) frameRecorder.resume();
+    else frameRecorder.frame(timestamp);
+    if (timestamp - lastUIFrame >= 1000 / 60) {
+      refresh();
+      lastUIFrame = timestamp;
+    }
+    if (timestamp - lastFPS >= 1000) {
+      fps.value = frameRecorder.snapshot().fps;
+      lastFPS = timestamp;
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  async function initialize(): Promise<void> {
+    removeProgress = window.desktop.onImageProgress((value) => {
+      if (value.handle === session.value?.handle) imageProgress.value = value;
+    });
+    await run(async () => adopt(unwrap(await window.desktop.newProject(project.value))));
+    raf = requestAnimationFrame(frame);
+    const sample = async () => {
+      const result = await window.desktop.processSample();
+      if (result.ok) {
+        performanceSample.value = result.value;
+        performanceHistory.push(result.value);
+        if (performanceHistory.length > 150) performanceHistory.shift();
+      }
+    };
+    await sample();
+    sampleTimer = setInterval(() => {
+      void sample();
+    }, 2000);
+  }
+  function attachStage(value: EditorStage): void {
+    stage.value = value;
+    value.setArtwork(project.value.stage.artworkSize, true);
+    value.onChange = () => {
+      zoom.value = value.viewport.zoom;
+      sceneRevision.value++;
+    };
+    value.onSelect = selectLayer;
+    value.onMoveLayer = moveSelected;
+    value.onAssetError = (error) => notify(error, 'warning');
+    if (session.value) value.setScene(project.value, session.value.handle);
+    value.onContextLost = () => {
+      pause();
+      notify('图形设备连接中断，播放已暂停。画布恢复后可继续。', 'warning');
+    };
+    zoom.value = value.viewport.zoom;
+  }
+  async function dispose(): Promise<void> {
+    cancelAnimationFrame(raf);
+    clearInterval(sampleTimer);
+    removeProgress?.();
+    await transport.dispose();
+    resources.dispose();
+  }
+  return {
+    project,
+    session,
+    busy,
+    dirty,
+    canUndo,
+    canRedo,
+    notice,
+    music,
+    buffer,
+    playback,
+    tempo,
+    fps,
+    zoom,
+    performanceSample,
+    resources,
+    stage,
+    confirmReplacement,
+    selectedLayerId,
+    selectedLayer,
+    selectLayer,
+    deleteSelectedLayer,
+    deleteAudio,
+    imageProgress,
+    lastImport,
+    importWarnings,
+    sceneRevision,
+    initialize,
+    attachStage,
+    notify,
+    edit,
+    newDocument,
+    open,
+    importMusic,
+    importImage,
+    cancelImageImport: () => window.desktop.cancelImageImport(),
+    save: (as = false) => run(() => save(as)),
+    undo: () => travel('undo'),
+    redo: () => travel('redo'),
+    togglePlay,
+    seek,
+    pause,
+    fit,
+    setZoom,
+    exportPerformance,
+    dispose,
+  };
+}
+export type Editor = ReturnType<typeof createEditor>;

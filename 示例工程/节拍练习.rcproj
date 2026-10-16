@@ -1,0 +1,120 @@
+{
+  "assets": {
+    "06213985-e581-442b-90db-203121a17aa4": {
+      "audio": {
+        "channels": 2,
+        "durationUs": 4000000,
+        "sampleRate": 48000
+      },
+      "byteLength": 64748,
+      "id": "06213985-e581-442b-90db-203121a17aa4",
+      "kind": "audio",
+      "originalName": "格式测试.mp3",
+      "relativePath": "assets/audio/06213985-e581-442b-90db-203121a17aa4.mp3",
+      "sha256": "d377a3de7e33b1d82853941cb090d29613fb11ebeabeab5cc3d3e85a2afae41d"
+    },
+    "547a8fe6-3582-466a-bcaa-4198550f0590": {
+      "audio": {
+        "channels": 2,
+        "durationUs": 18000000,
+        "sampleRate": 48000
+      },
+      "byteLength": 3456044,
+      "id": "547a8fe6-3582-466a-bcaa-4198550f0590",
+      "kind": "audio",
+      "originalName": "示例节拍 120BPM.wav",
+      "relativePath": "assets/audio/547a8fe6-3582-466a-bcaa-4198550f0590.wav",
+      "sha256": "49a4a0e42aa4568aac6df0bc167a976a804c4332e2744f41d057ce531b3e8cd8"
+    },
+    "d3a3d9ac-1d3a-4e53-8c0f-c9268774ad15": {
+      "audio": {
+        "channels": 2,
+        "durationUs": 4000000,
+        "sampleRate": 48000
+      },
+      "byteLength": 22305,
+      "id": "d3a3d9ac-1d3a-4e53-8c0f-c9268774ad15",
+      "kind": "audio",
+      "originalName": "格式测试.ogg",
+      "relativePath": "assets/audio/d3a3d9ac-1d3a-4e53-8c0f-c9268774ad15.ogg",
+      "sha256": "5531e82a580cd9fc89b3d6895beaed188a7752bbc448bdc20f14f6c3ad95cf6f"
+    }
+  },
+  "camera": {
+    "base": {
+      "position": {
+        "x": 3000,
+        "y": 3000
+      },
+      "rotationRad": 0,
+      "zoom": 1
+    },
+    "keys": {}
+  },
+  "createdAt": "2026-10-16T13:23:56.081Z",
+  "format": "rhythm-canvas",
+  "id": "e32fd916-f815-4816-820c-645a0fa79d27",
+  "layers": {},
+  "modifiedAt": "2026-10-16T13:37:09.410Z",
+  "music": {
+    "assetId": "547a8fe6-3582-466a-bcaa-4198550f0590",
+    "gain": 0.8
+  },
+  "name": "阶段 1 节拍练习",
+  "notes": {},
+  "output": {
+    "framing": "contain",
+    "size": {
+      "height": 1080,
+      "width": 1920
+    }
+  },
+  "paths": {},
+  "pixelSources": {},
+  "reveals": {},
+  "revision": 6,
+  "rootLayersBottomToTop": [],
+  "rules": {
+    "hitWindowsUs": {
+      "good": 100000,
+      "ok": 150000,
+      "perfect": 50000
+    },
+    "sliderCompleteRatio": 0.8,
+    "sliderTailGraceUs": 80000
+  },
+  "schemaVersion": 1,
+  "sounds": {},
+  "sourceDocuments": {},
+  "stage": {
+    "artworkSize": {
+      "height": 6000,
+      "width": 6000
+    },
+    "chartSize": {
+      "height": 384,
+      "width": 512
+    },
+    "playfieldRect": {
+      "height": 6000,
+      "width": 6000,
+      "x": 0,
+      "y": 0
+    }
+  },
+  "timing": {
+    "beatZeroUs": 0,
+    "points": [
+      {
+        "bpm": 120,
+        "id": "c8c9c946-07dd-4581-9c9b-d0ed868cc862",
+        "meter": [
+          4,
+          4
+        ],
+        "tick": 0
+      }
+    ],
+    "ppq": 960
+  }
+}
