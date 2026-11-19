@@ -1,0 +1,401 @@
+{
+  "assets": {
+    "814d804a-716e-4f56-aff7-e0cdd54cb8b2": {
+      "id": "814d804a-716e-4f56-aff7-e0cdd54cb8b2",
+      "relativePath": "assets/节拍.wav",
+      "originalName": "节拍.wav",
+      "sha256": "40c0dd93188bb11e89eb197329013441b485d23d93cadd472a9f0f367a394f71",
+      "byteLength": 864044,
+      "kind": "audio",
+      "audioRole": "music",
+      "audio": {
+        "channels": 1,
+        "durationUs": 18000000,
+        "sampleRate": 48000
+      }
+    },
+    "54026c4a-3d23-4b52-9fdc-c2da72a4f12e": {
+      "id": "54026c4a-3d23-4b52-9fdc-c2da72a4f12e",
+      "relativePath": "assets/裙摆 PNG.png",
+      "originalName": "裙摆 PNG.png",
+      "sha256": "ae7d1efd5f825fdbec30f328d0ae431776667eaf91a3030cf5aaca865152bafd",
+      "byteLength": 171180,
+      "kind": "png",
+      "pixelSize": {
+        "width": 1064,
+        "height": 1614
+      }
+    }
+  },
+  "camera": {
+    "enabled": false,
+    "base": {
+      "position": {
+        "x": 800,
+        "y": 900
+      },
+      "zoom": 1,
+      "rotationRad": 0
+    },
+    "keys": {},
+    "shakes": {}
+  },
+  "createdAt": "2026-10-19T15:26:30.594Z",
+  "format": "rhythm-canvas",
+  "id": "dfb257b8-5804-4735-b971-9b019f745035",
+  "layers": {
+    "1bbb42d6-b5e8-42a6-b86f-d666f88c54ee": {
+      "id": "1bbb42d6-b5e8-42a6-b86f-d666f88c54ee",
+      "name": "裙摆 PNG",
+      "kind": "raster",
+      "pixelSourceId": "555b35dc-8fe5-4c2e-adfd-08cc19b67b0c",
+      "transform": {
+        "position": {
+          "x": 268,
+          "y": 90
+        },
+        "scale": {
+          "x": 1,
+          "y": 1
+        },
+        "rotationRad": 0,
+        "skewRad": {
+          "x": 0,
+          "y": 0
+        },
+        "pivot": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "opacity": 1,
+      "enabled": true,
+      "locked": false,
+      "initialReveal": 0,
+      "blendMode": "normal"
+    }
+  },
+  "mixer": {
+    "music": {
+      "gain": 0.5,
+      "muted": false
+    },
+    "hit": {
+      "gain": 1,
+      "muted": false
+    },
+    "animation": {
+      "gain": 1,
+      "muted": false
+    }
+  },
+  "modifiedAt": "2026-10-19T15:26:30.594Z",
+  "music": {
+    "assetId": "814d804a-716e-4f56-aff7-e0cdd54cb8b2",
+    "gain": 0.55
+  },
+  "name": "PNG 扇形展开与收拢",
+  "notes": {
+    "93847ab1-b1ed-4973-aff1-89ca8a8ed431": {
+      "id": "93847ab1-b1ed-4973-aff1-89ca8a8ed431",
+      "kind": "circle",
+      "at": {
+        "basis": "time",
+        "timeUs": 1000000
+      },
+      "position": {
+        "x": 470,
+        "y": 470
+      },
+      "radius": 18
+    },
+    "e3fc9642-afe0-48b1-89af-395c067b8be4": {
+      "id": "e3fc9642-afe0-48b1-89af-395c067b8be4",
+      "kind": "circle",
+      "at": {
+        "basis": "time",
+        "timeUs": 5000000
+      },
+      "position": {
+        "x": 470,
+        "y": 470
+      },
+      "radius": 18
+    },
+    "80049084-75e9-48cd-905b-34ec736d2233": {
+      "id": "80049084-75e9-48cd-905b-34ec736d2233",
+      "kind": "circle",
+      "at": {
+        "basis": "time",
+        "timeUs": 9000000
+      },
+      "position": {
+        "x": 470,
+        "y": 470
+      },
+      "radius": 18
+    },
+    "a0016296-9451-49ae-bb61-c9bb733701ab": {
+      "id": "a0016296-9451-49ae-bb61-c9bb733701ab",
+      "kind": "circle",
+      "at": {
+        "basis": "time",
+        "timeUs": 13000000
+      },
+      "position": {
+        "x": 470,
+        "y": 470
+      },
+      "radius": 18
+    }
+  },
+  "output": {
+    "framing": "contain",
+    "size": {
+      "height": 1080,
+      "width": 1920
+    }
+  },
+  "paths": {},
+  "pixelSources": {
+    "555b35dc-8fe5-4c2e-adfd-08cc19b67b0c": {
+      "id": "555b35dc-8fe5-4c2e-adfd-08cc19b67b0c",
+      "sourceAssetId": "54026c4a-3d23-4b52-9fdc-c2da72a4f12e",
+      "originalBounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1064,
+        "height": 1614
+      },
+      "cropRect": {
+        "x": 0,
+        "y": 0,
+        "width": 1064,
+        "height": 1614
+      },
+      "levels": [
+        {
+          "level": 0,
+          "scale": 1,
+          "pixelSize": {
+            "width": 1064,
+            "height": 1614
+          },
+          "tileSize": 1614,
+          "gutter": 0,
+          "tiles": [
+            {
+              "assetId": "54026c4a-3d23-4b52-9fdc-c2da72a4f12e",
+              "sourceRect": {
+                "x": 0,
+                "y": 0,
+                "width": 1064,
+                "height": 1614
+              },
+              "pixelRect": {
+                "x": 0,
+                "y": 0,
+                "width": 1064,
+                "height": 1614
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "reveals": {
+    "3abd0255-f02b-48dd-abea-8a5fd627738d": {
+      "id": "3abd0255-f02b-48dd-abea-8a5fd627738d",
+      "layerId": "1bbb42d6-b5e8-42a6-b86f-d666f88c54ee",
+      "trigger": {
+        "kind": "timeline",
+        "at": {
+          "basis": "time",
+          "timeUs": 1000000
+        }
+      },
+      "effect": {
+        "kind": "fan",
+        "center": {
+          "x": 0.5,
+          "y": 1
+        },
+        "startAngleRad": -3.141592653589793,
+        "sweepAngleRad": 3.141592653589793,
+        "direction": "clockwise",
+        "mode": "open"
+      },
+      "easing": "linear",
+      "progress": {
+        "kind": "elapsed",
+        "duration": {
+          "basis": "time",
+          "durationUs": 3000000
+        }
+      },
+      "after": "hold",
+      "priority": 0
+    },
+    "1ef8faae-89f2-4ce1-9499-e4ee29b83390": {
+      "id": "1ef8faae-89f2-4ce1-9499-e4ee29b83390",
+      "layerId": "1bbb42d6-b5e8-42a6-b86f-d666f88c54ee",
+      "trigger": {
+        "kind": "timeline",
+        "at": {
+          "basis": "time",
+          "timeUs": 5000000
+        }
+      },
+      "effect": {
+        "kind": "fan",
+        "center": {
+          "x": 0.5,
+          "y": 1
+        },
+        "startAngleRad": -3.141592653589793,
+        "sweepAngleRad": 3.141592653589793,
+        "direction": "clockwise",
+        "mode": "close"
+      },
+      "easing": "linear",
+      "progress": {
+        "kind": "elapsed",
+        "duration": {
+          "basis": "time",
+          "durationUs": 3000000
+        }
+      },
+      "after": "hold",
+      "priority": 0
+    },
+    "1b5a46d0-d3ef-47e8-af4a-04d0b154c25a": {
+      "id": "1b5a46d0-d3ef-47e8-af4a-04d0b154c25a",
+      "layerId": "1bbb42d6-b5e8-42a6-b86f-d666f88c54ee",
+      "trigger": {
+        "kind": "timeline",
+        "at": {
+          "basis": "time",
+          "timeUs": 9000000
+        }
+      },
+      "effect": {
+        "kind": "fan",
+        "center": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "startAngleRad": -1.5707963267948966,
+        "sweepAngleRad": 6.283185307179586,
+        "direction": "counterclockwise",
+        "mode": "open"
+      },
+      "easing": "linear",
+      "progress": {
+        "kind": "elapsed",
+        "duration": {
+          "basis": "time",
+          "durationUs": 3000000
+        }
+      },
+      "after": "hold",
+      "priority": 0
+    },
+    "e4101fc3-8d59-4536-b4ba-e5049f782991": {
+      "id": "e4101fc3-8d59-4536-b4ba-e5049f782991",
+      "layerId": "1bbb42d6-b5e8-42a6-b86f-d666f88c54ee",
+      "trigger": {
+        "kind": "timeline",
+        "at": {
+          "basis": "time",
+          "timeUs": 13000000
+        }
+      },
+      "effect": {
+        "kind": "fan",
+        "center": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "startAngleRad": -1.5707963267948966,
+        "sweepAngleRad": 6.283185307179586,
+        "direction": "counterclockwise",
+        "mode": "close"
+      },
+      "easing": "linear",
+      "progress": {
+        "kind": "elapsed",
+        "duration": {
+          "basis": "time",
+          "durationUs": 3000000
+        }
+      },
+      "after": "hold",
+      "priority": 0
+    }
+  },
+  "revision": 0,
+  "rootLayersBottomToTop": [
+    "1bbb42d6-b5e8-42a6-b86f-d666f88c54ee"
+  ],
+  "rules": {
+    "hitWindowsUs": {
+      "good": 100000,
+      "ok": 150000,
+      "perfect": 50000
+    },
+    "holdCompleteRatio": 0.95,
+    "sliderCompleteRatio": 0.8,
+    "sliderTailGraceUs": 80000
+  },
+  "schemaVersion": 1,
+  "sounds": {},
+  "sourceDocuments": {},
+  "stage": {
+    "artworkSize": {
+      "width": 1600,
+      "height": 1800
+    },
+    "chartSize": {
+      "width": 512,
+      "height": 512
+    },
+    "playfieldRect": {
+      "x": 0,
+      "y": 0,
+      "width": 1600,
+      "height": 1800
+    }
+  },
+  "timing": {
+    "ppq": 960,
+    "beatZeroUs": 0,
+    "points": [
+      {
+        "id": "a23c512d-aebb-49e7-af18-fc72e47749d6",
+        "tick": 0,
+        "bpm": 120,
+        "meter": [
+          4,
+          4
+        ]
+      }
+    ]
+  },
+  "tracks": {
+    "order": [
+      "music",
+      "notes",
+      "layers",
+      "outlines",
+      "sounds",
+      "camera"
+    ],
+    "collapsed": [
+      "outlines",
+      "sounds",
+      "camera"
+    ],
+    "hidden": []
+  }
+}

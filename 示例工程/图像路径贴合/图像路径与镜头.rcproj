@@ -1,0 +1,591 @@
+{
+  "assets": {
+    "547a8fe6-3582-466a-bcaa-4198550f0590": {
+      "audio": {
+        "channels": 2,
+        "durationUs": 18000000,
+        "sampleRate": 48000
+      },
+      "byteLength": 3456044,
+      "id": "547a8fe6-3582-466a-bcaa-4198550f0590",
+      "kind": "audio",
+      "originalName": "示例节拍 120BPM.wav",
+      "relativePath": "assets/audio/547a8fe6-3582-466a-bcaa-4198550f0590.wav",
+      "sha256": "49a4a0e42aa4568aac6df0bc167a976a804c4332e2744f41d057ce531b3e8cd8"
+    },
+    "6f1383b1-9f45-4fb5-a70c-90c747772c57": {
+      "byteLength": 9328,
+      "id": "6f1383b1-9f45-4fb5-a70c-90c747772c57",
+      "kind": "png",
+      "originalName": "曲线图案.png · L1 分块",
+      "pixelSize": {
+        "height": 192,
+        "width": 256
+      },
+      "relativePath": "assets/images/b84f6dc4-9f5f-4d8e-899e-617741dae6ed/6f1383b1-9f45-4fb5-a70c-90c747772c57.png",
+      "sha256": "db1e58412ef12a1f47e68a4b03ff692c3bacb0b3d3b5ac4569862f8d0643bca6"
+    },
+    "720be176-7330-4000-afad-dfdc1be773a8": {
+      "byteLength": 23799,
+      "id": "720be176-7330-4000-afad-dfdc1be773a8",
+      "kind": "png",
+      "originalName": "曲线图案.png",
+      "pixelSize": {
+        "height": 384,
+        "width": 512
+      },
+      "relativePath": "assets/images/b84f6dc4-9f5f-4d8e-899e-617741dae6ed/original.png",
+      "sha256": "9024a445d2eb0abe249de1fde7ad01cfade0ab7c0a8df37bdf881e98a866a6a2"
+    },
+    "d528e9ea-3637-4027-b468-a74718fe4776": {
+      "byteLength": 21753,
+      "id": "d528e9ea-3637-4027-b468-a74718fe4776",
+      "kind": "png",
+      "originalName": "曲线图案.png · L0 分块",
+      "pixelSize": {
+        "height": 384,
+        "width": 512
+      },
+      "relativePath": "assets/images/b84f6dc4-9f5f-4d8e-899e-617741dae6ed/d528e9ea-3637-4027-b468-a74718fe4776.png",
+      "sha256": "95b0ab75336fa7011ae0ed67b98c5a3742c1fe17c6c13e1d7034aed307179023"
+    },
+    "f547bb29-66c0-4349-a1b9-c785c16edea2": {
+      "byteLength": 4566,
+      "id": "f547bb29-66c0-4349-a1b9-c785c16edea2",
+      "kind": "png",
+      "originalName": "曲线图案.png · L2 分块",
+      "pixelSize": {
+        "height": 96,
+        "width": 128
+      },
+      "relativePath": "assets/images/b84f6dc4-9f5f-4d8e-899e-617741dae6ed/f547bb29-66c0-4349-a1b9-c785c16edea2.png",
+      "sha256": "64dbcd33fcfe2fe42670ca1afbe5f75fde62438813100c16c2e97d41baae3411"
+    }
+  },
+  "camera": {
+    "base": {
+      "position": {
+        "x": 256,
+        "y": 192
+      },
+      "rotationRad": 0,
+      "zoom": 1
+    },
+    "enabled": true,
+    "keys": {
+      "63a07bf5-026f-45b2-9eaf-b874c1701cf5": {
+        "at": {
+          "basis": "time",
+          "timeUs": 2000000
+        },
+        "easingToNext": "linear",
+        "id": "63a07bf5-026f-45b2-9eaf-b874c1701cf5",
+        "position": {
+          "x": 256,
+          "y": 192
+        },
+        "rotationRad": 0,
+        "zoom": 1
+      },
+      "6972e779-f81a-409a-bd77-bbb6dc6641f3": {
+        "at": {
+          "basis": "time",
+          "timeUs": 8000000
+        },
+        "easingToNext": "linear",
+        "id": "6972e779-f81a-409a-bd77-bbb6dc6641f3",
+        "position": {
+          "x": 256,
+          "y": 192
+        },
+        "rotationRad": 0,
+        "zoom": 1
+      },
+      "8297b5b3-52c0-42ca-89a4-2adf23b5368d": {
+        "at": {
+          "basis": "time",
+          "timeUs": 5000000
+        },
+        "easingToNext": "linear",
+        "id": "8297b5b3-52c0-42ca-89a4-2adf23b5368d",
+        "position": {
+          "x": 280,
+          "y": 170
+        },
+        "rotationRad": 0.08,
+        "zoom": 1.12
+      },
+      "b7df4268-c27f-419a-bc3b-59186be74593": {
+        "at": {
+          "basis": "time",
+          "timeUs": 0
+        },
+        "easingToNext": "linear",
+        "id": "b7df4268-c27f-419a-bc3b-59186be74593",
+        "position": {
+          "x": 256,
+          "y": 192
+        },
+        "rotationRad": 0,
+        "zoom": 1
+      }
+    },
+    "shakes": {}
+  },
+  "createdAt": "2026-10-16T13:23:56.081Z",
+  "format": "rhythm-canvas",
+  "id": "2c4af0fb-4427-4455-97db-00d5df9cfeb6",
+  "layers": {
+    "561b3835-92b1-4b4d-9384-3ced1af89580": {
+      "blendMode": "normal",
+      "enabled": true,
+      "id": "561b3835-92b1-4b4d-9384-3ced1af89580",
+      "initialReveal": 1,
+      "kind": "raster",
+      "locked": false,
+      "name": "曲线图案",
+      "opacity": 1,
+      "pixelSourceId": "aba2ec9b-f4a8-4a38-8c3b-4d45d0dd8c73",
+      "transform": {
+        "pivot": {
+          "x": 0,
+          "y": 0
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotationRad": 0,
+        "scale": {
+          "x": 1,
+          "y": 1
+        },
+        "skewRad": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    },
+    "93353d50-f91d-455d-abca-bd8bc19f9083": {
+      "blendMode": "normal",
+      "childrenBottomToTop": [
+        "561b3835-92b1-4b4d-9384-3ced1af89580"
+      ],
+      "enabled": true,
+      "expanded": true,
+      "id": "93353d50-f91d-455d-abca-bd8bc19f9083",
+      "initialReveal": 1,
+      "isolation": "pass-through",
+      "kind": "group",
+      "locked": false,
+      "name": "移动图案",
+      "opacity": 1,
+      "transform": {
+        "pivot": {
+          "x": 0,
+          "y": 0
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "rotationRad": 0,
+        "scale": {
+          "x": 1,
+          "y": 1
+        },
+        "skewRad": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    }
+  },
+  "mixer": {
+    "animation": {
+      "gain": 1,
+      "muted": false
+    },
+    "hit": {
+      "gain": 1,
+      "muted": false
+    },
+    "music": {
+      "gain": 1,
+      "muted": false
+    }
+  },
+  "modifiedAt": "2026-10-20T04:46:51.217Z",
+  "music": {
+    "assetId": "547a8fe6-3582-466a-bcaa-4198550f0590",
+    "gain": 0.3
+  },
+  "name": "图像路径与镜头 · 贴合练习",
+  "notes": {
+    "2df91cf2-faad-4a68-b3ef-64beb6a7fb8c": {
+      "at": {
+        "basis": "time",
+        "timeUs": 2000000
+      },
+      "binding": {
+        "layerId": "561b3835-92b1-4b4d-9384-3ced1af89580",
+        "reference": {
+          "pivot": {
+            "x": 0,
+            "y": 0
+          },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotationRad": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          },
+          "skewRad": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      },
+      "duration": {
+        "basis": "time",
+        "durationUs": 5000000
+      },
+      "followRadius": 28,
+      "headRadius": 24,
+      "id": "2df91cf2-faad-4a68-b3ef-64beb6a7fb8c",
+      "kind": "slider",
+      "path": {
+        "pathId": "6bb21f20-a09c-48a7-9850-b0af827227f4",
+        "transform": {
+          "pivot": {
+            "x": 0,
+            "y": 0
+          },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotationRad": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          },
+          "skewRad": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "framing": "contain",
+    "size": {
+      "height": 1080,
+      "width": 1920
+    }
+  },
+  "paths": {
+    "6bb21f20-a09c-48a7-9850-b0af827227f4": {
+      "closed": false,
+      "defaultWidth": 1,
+      "id": "6bb21f20-a09c-48a7-9850-b0af827227f4",
+      "interpolation": "bezier",
+      "name": "图案中的曲线",
+      "nodes": [
+        {
+          "handleIn": {
+            "x": 0,
+            "y": 0
+          },
+          "handleOut": {
+            "x": -5,
+            "y": -80
+          },
+          "id": "c60f427e-6335-4a80-af0d-0b788d6585eb",
+          "mode": "corner",
+          "point": {
+            "x": 125,
+            "y": 280
+          }
+        },
+        {
+          "handleIn": {
+            "x": -100,
+            "y": -30
+          },
+          "handleOut": {
+            "x": 0,
+            "y": 0
+          },
+          "id": "f3eb5b92-db4b-42e1-b758-f395e84643c1",
+          "mode": "corner",
+          "point": {
+            "x": 390,
+            "y": 110
+          }
+        }
+      ]
+    }
+  },
+  "pixelSources": {
+    "aba2ec9b-f4a8-4a38-8c3b-4d45d0dd8c73": {
+      "cropRect": {
+        "height": 384,
+        "width": 512,
+        "x": 0,
+        "y": 0
+      },
+      "id": "aba2ec9b-f4a8-4a38-8c3b-4d45d0dd8c73",
+      "levels": [
+        {
+          "gutter": 2,
+          "level": 0,
+          "pixelSize": {
+            "height": 384,
+            "width": 512
+          },
+          "scale": 1,
+          "tiles": [
+            {
+              "assetId": "d528e9ea-3637-4027-b468-a74718fe4776",
+              "pixelRect": {
+                "height": 384,
+                "width": 512,
+                "x": 0,
+                "y": 0
+              },
+              "sourceRect": {
+                "height": 384,
+                "width": 512,
+                "x": 0,
+                "y": 0
+              }
+            }
+          ],
+          "tileSize": 1024
+        },
+        {
+          "gutter": 2,
+          "level": 1,
+          "pixelSize": {
+            "height": 192,
+            "width": 256
+          },
+          "scale": 0.5,
+          "tiles": [
+            {
+              "assetId": "6f1383b1-9f45-4fb5-a70c-90c747772c57",
+              "pixelRect": {
+                "height": 192,
+                "width": 256,
+                "x": 0,
+                "y": 0
+              },
+              "sourceRect": {
+                "height": 384,
+                "width": 512,
+                "x": 0,
+                "y": 0
+              }
+            }
+          ],
+          "tileSize": 1024
+        },
+        {
+          "gutter": 2,
+          "level": 2,
+          "pixelSize": {
+            "height": 96,
+            "width": 128
+          },
+          "scale": 0.25,
+          "tiles": [
+            {
+              "assetId": "f547bb29-66c0-4349-a1b9-c785c16edea2",
+              "pixelRect": {
+                "height": 96,
+                "width": 128,
+                "x": 0,
+                "y": 0
+              },
+              "sourceRect": {
+                "height": 384,
+                "width": 512,
+                "x": 0,
+                "y": 0
+              }
+            }
+          ],
+          "tileSize": 1024
+        }
+      ],
+      "originalBounds": {
+        "height": 384,
+        "width": 512,
+        "x": 0,
+        "y": 0
+      },
+      "sourceAssetId": "720be176-7330-4000-afad-dfdc1be773a8"
+    }
+  },
+  "reveals": {
+    "b4ceb0c2-6d44-4c76-81db-8bc7f8f6cda6": {
+      "after": "hold",
+      "easing": "linear",
+      "effect": {
+        "kind": "slide-in",
+        "offset": {
+          "x": -50,
+          "y": 35
+        }
+      },
+      "id": "b4ceb0c2-6d44-4c76-81db-8bc7f8f6cda6",
+      "layerId": "93353d50-f91d-455d-abca-bd8bc19f9083",
+      "priority": 0,
+      "progress": {
+        "duration": {
+          "basis": "time",
+          "durationUs": 10000000
+        },
+        "kind": "elapsed"
+      },
+      "trigger": {
+        "at": {
+          "basis": "time",
+          "timeUs": 0
+        },
+        "kind": "timeline"
+      }
+    },
+    "e488007d-b944-47fa-b84d-3b41945caa32": {
+      "after": "hold",
+      "easing": "linear",
+      "effect": {
+        "drawing": {
+          "forwardRatio": 0.5,
+          "mode": "single",
+          "start": 0
+        },
+        "kind": "outline",
+        "layer": {
+          "durationUs": 0,
+          "fromScale": 1,
+          "kind": "instant",
+          "overshoot": 0,
+          "threshold": 0
+        },
+        "lineAfter": {
+          "durationUs": 0,
+          "kind": "keep"
+        },
+        "linkedSliderId": "2df91cf2-faad-4a68-b3ef-64beb6a7fb8c",
+        "path": {
+          "pathId": "6bb21f20-a09c-48a7-9850-b0af827227f4",
+          "transform": {
+            "pivot": {
+              "x": 0,
+              "y": 0
+            },
+            "position": {
+              "x": 0,
+              "y": 0
+            },
+            "rotationRad": 0,
+            "scale": {
+              "x": 1,
+              "y": 1
+            },
+            "skewRad": {
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "stroke": {
+          "color": "#a5d9c9",
+          "glow": 0.6,
+          "tips": false,
+          "tipSize": 2,
+          "width": 1
+        }
+      },
+      "id": "e488007d-b944-47fa-b84d-3b41945caa32",
+      "layerId": "561b3835-92b1-4b4d-9384-3ced1af89580",
+      "priority": 0,
+      "progress": {
+        "kind": "slider-timeline",
+        "noteId": "2df91cf2-faad-4a68-b3ef-64beb6a7fb8c"
+      },
+      "trigger": {
+        "at": {
+          "basis": "time",
+          "timeUs": 2000000
+        },
+        "kind": "timeline"
+      }
+    }
+  },
+  "revision": 8,
+  "rootLayersBottomToTop": [
+    "93353d50-f91d-455d-abca-bd8bc19f9083"
+  ],
+  "rules": {
+    "hitWindowsUs": {
+      "good": 100000,
+      "ok": 150000,
+      "perfect": 50000
+    },
+    "sliderCompleteRatio": 0.8,
+    "sliderTailGraceUs": 80000
+  },
+  "schemaVersion": 1,
+  "sounds": {},
+  "sourceDocuments": {},
+  "stage": {
+    "artworkSize": {
+      "height": 384,
+      "width": 512
+    },
+    "chartSize": {
+      "height": 384,
+      "width": 512
+    },
+    "playfieldRect": {
+      "height": 384,
+      "width": 512,
+      "x": 0,
+      "y": 0
+    }
+  },
+  "timing": {
+    "beatZeroUs": 0,
+    "points": [
+      {
+        "bpm": 120,
+        "id": "c8c9c946-07dd-4581-9c9b-d0ed868cc862",
+        "meter": [
+          4,
+          4
+        ],
+        "tick": 0
+      }
+    ],
+    "ppq": 960
+  },
+  "tracks": {
+    "collapsed": [],
+    "hidden": [],
+    "order": [
+      "music",
+      "notes",
+      "layers",
+      "outlines",
+      "sounds",
+      "camera"
+    ]
+  }
+}

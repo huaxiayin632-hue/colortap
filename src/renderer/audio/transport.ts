@@ -16,6 +16,7 @@ export class AudioTransport {
   private readonly clock = new AnchoredClock();
   private level = 0.8;
   private generation = 0;
+  private anchor = { contextSeconds: 0, musicUs: 0 };
   constructor(private readonly resources: ResourcePool) {}
   get buffer(): AudioBuffer | null {
     return this.music?.lease.value ?? null;
@@ -34,6 +35,23 @@ export class AudioTransport {
       this.gain.connect(this.context.destination);
     }
     return this.context;
+  }
+  get sharedContext(): AudioContext {
+    return this.audioContext();
+  }
+  contextTimeAt(musicUs: number): number {
+    return this.anchor.contextSeconds + (musicUs - this.anchor.musicUs) / 1_000_000;
+  }
+  async decode(asset: Asset, bytes: ArrayBuffer): Promise<ResourceLease<AudioBuffer>> {
+    const context = this.audioContext();
+    return this.resources.acquire(
+      `audio:${asset.id}:${asset.sha256}`,
+      'decoded-audio',
+      async () => {
+        const buffer = await context.decodeAudioData(bytes);
+        return { value: buffer, bytes: buffer.length * buffer.numberOfChannels * 4 };
+      },
+    );
   }
   // Convert the output device clock into the same AudioContext time domain as source.start().
   private outputSeconds(): number {
@@ -110,6 +128,7 @@ export class AudioTransport {
     const positionUs = this.clock.positionAt(this.outputSeconds());
     this.stopSource();
     const startsAt = this.context.currentTime + 0.02;
+    this.anchor = { contextSeconds: startsAt, musicUs: positionUs };
     const source = this.context.createBufferSource();
     source.buffer = this.music.lease.value;
     source.connect(this.gain);

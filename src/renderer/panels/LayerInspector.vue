@@ -8,7 +8,9 @@ const layer = computed(() => props.editor.selectedLayer.value);
 const locked = computed(() =>
   Boolean(
     layer.value &&
-    (props.editor.busy.value || isLocked(props.editor.project.value, layer.value.id)),
+    (props.editor.busy.value ||
+      props.editor.chart.mode.value !== 'edit' ||
+      isLocked(props.editor.project.value, layer.value.id)),
   ),
 );
 function transform(field: 'position' | 'scale' | 'rotation', axis: 'x' | 'y', value: string): void {
@@ -36,11 +38,26 @@ const source = computed(() =>
       {{ layer.kind === 'group' ? '分组' : '图层' }}属性
       <span v-if="locked" class="muted">· 已锁定</span>
     </h2>
+    <label class="checkbox-label reveal-checkbox"
+      ><input
+        type="checkbox"
+        aria-label="图层演出初始可见"
+        :checked="layer.initialReveal === 1"
+        :disabled="editor.busy.value || editor.chart.mode.value !== 'edit'"
+        @change="
+          editor.edit({
+            type: 'set-layer',
+            id: layer.id,
+            patch: { initialReveal: ($event.target as HTMLInputElement).checked ? 1 : 0 },
+          })
+        "
+      />演出初始可见</label
+    >
     <label class="stacked-label"
       >名称<CommitInput
         aria-label="图层名称"
         :value="layer.name"
-        :disabled="editor.busy.value"
+        :disabled="editor.busy.value || editor.chart.mode.value !== 'edit'"
         @commit="editor.edit({ type: 'set-layer', id: layer.id, patch: { name: $event } })"
     /></label>
     <div class="two-fields">

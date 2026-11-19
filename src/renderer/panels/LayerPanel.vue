@@ -4,6 +4,9 @@ import type { Editor } from '../state/editor';
 import type { Layer } from '../../shared/models';
 import { isLocked, parents } from '../../core/layers';
 const props = defineProps<{ editor: Editor }>();
+const readOnly = computed(
+  () => props.editor.busy.value || props.editor.chart.mode.value !== 'edit',
+);
 const dragging = ref<string | null>(null),
   over = ref('');
 const rows = computed(() => {
@@ -21,7 +24,7 @@ const rows = computed(() => {
   return result;
 });
 function start(event: DragEvent, id: string): void {
-  if (props.editor.busy.value || isLocked(props.editor.project.value, id)) {
+  if (readOnly.value || isLocked(props.editor.project.value, id)) {
     event.preventDefault();
     return;
   }
@@ -80,18 +83,18 @@ function nudge(direction: number): void {
     ><span class="count">{{ Object.keys(editor.project.value.layers).length }}</span>
   </header>
   <div class="layer-actions">
-    <button :disabled="editor.busy.value" @click="editor.importImage()">＋ 导入 PSD / PNG</button
+    <button :disabled="readOnly" @click="editor.importImage()">＋ 导入 PSD / PNG</button
     ><button
       title="将选中图层上移一层"
       aria-label="图层上移"
-      :disabled="editor.busy.value || !editor.selectedLayerId.value"
+      :disabled="readOnly || !editor.selectedLayerId.value"
       @click="nudge(1)"
     >
       ↑</button
     ><button
       title="将选中图层下移一层"
       aria-label="图层下移"
-      :disabled="editor.busy.value || !editor.selectedLayerId.value"
+      :disabled="readOnly || !editor.selectedLayerId.value"
       @click="nudge(-1)"
     >
       ↓
@@ -101,7 +104,7 @@ function nudge(direction: number): void {
       title="删除选中图层或整个分组，可撤销（Delete）"
       aria-label="删除选中图层或分组"
       :disabled="
-        editor.busy.value ||
+        readOnly ||
         !editor.selectedLayerId.value ||
         isLocked(editor.project.value, editor.selectedLayerId.value)
       "
@@ -126,7 +129,7 @@ function nudge(direction: number): void {
         drop: over === layer.id,
       }"
       :style="{ paddingLeft: `${5 + depth * 13}px` }"
-      :draggable="!editor.busy.value && !isLocked(editor.project.value, layer.id)"
+      :draggable="!readOnly && !isLocked(editor.project.value, layer.id)"
       tabindex="0"
       @click="editor.selectLayer(layer.id)"
       @keydown.enter="editor.selectLayer(layer.id)"
@@ -149,6 +152,7 @@ function nudge(direction: number): void {
       <button
         v-if="layer.kind === 'group'"
         class="tree-toggle"
+        :disabled="readOnly"
         :aria-label="`${layer.expanded === false ? '展开' : '折叠'} ${layer.name}`"
         @click.stop="
           editor.edit({
@@ -163,7 +167,7 @@ function nudge(direction: number): void {
       <span class="layer-name" :title="layer.name">{{ layer.name }}</span>
       <button
         :aria-label="`${layer.enabled ? '隐藏' : '显示'} ${layer.name}`"
-        :disabled="editor.busy.value"
+        :disabled="readOnly"
         @click.stop="
           editor.edit({ type: 'set-layer', id: layer.id, patch: { enabled: !layer.enabled } })
         "
@@ -172,7 +176,7 @@ function nudge(direction: number): void {
       </button>
       <button
         :aria-label="`${layer.locked ? '解锁' : '锁定'} ${layer.name}`"
-        :disabled="editor.busy.value"
+        :disabled="readOnly"
         @click.stop="
           editor.edit({ type: 'set-layer', id: layer.id, patch: { locked: !layer.locked } })
         "

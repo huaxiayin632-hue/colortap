@@ -68,7 +68,7 @@ export async function smallFixtures(directory) {
       width: 20,
       height: 20,
       children: [
-        { name: '滤色图层', blendMode: 'screen', imageData: solid(20, 20, [90, 120, 240, 255]) },
+        { name: '差值图层', blendMode: 'difference', imageData: solid(20, 20, [90, 120, 240, 255]) },
       ],
     }),
   );

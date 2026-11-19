@@ -1,3 +1,5 @@
+import type { MusicAnalysis } from './audio-analysis';
+
 // These are document values only. Never put Vue, PixiJS, AudioBuffer or file handles here.
 export type Id = string;
 export type Us = number;
@@ -31,6 +33,8 @@ export interface Asset {
   kind: 'audio' | 'psd' | 'png' | 'svg';
   relativePath: string;
   originalName: string;
+  label?: string;
+  audioRole?: 'music' | 'sfx';
   sha256: string;
   byteLength: number;
   pixelSize?: Size;
@@ -62,6 +66,18 @@ export interface LayerBase {
   locked: boolean;
   initialReveal: 0 | 1;
   blendMode: string;
+  /** The non-clipped sibling underneath this contiguous clipping stack. */
+  clippingBaseId?: Id;
+  /** Grayscale pixels are stored separately, never applied destructively to layer pixels. */
+  rasterMask?: {
+    sourceId?: Id;
+    position: Vec2;
+    defaultValue: number;
+    enabled: boolean;
+    density: number;
+    feather: number;
+    positionRelativeToLayer: boolean;
+  };
 }
 export type Layer = LayerBase &
   (
@@ -79,6 +95,8 @@ export interface BezierPath {
   name: string;
   closed: boolean;
   defaultWidth: number;
+  interpolation?: 'bezier' | 'polyline';
+  // Handles are offsets from their node, in path-local coordinates.
   nodes: {
     id: Id;
     point: Vec2;
@@ -90,25 +108,85 @@ export interface BezierPath {
 export interface PathInstance {
   pathId: Id;
   transform: Transform2D;
+  reversed?: boolean;
+}
+export interface SliderBinding {
+  layerId: Id;
+  // Layer-to-artwork pose at attachment. Existing path coordinates stay in chart space.
+  reference: Transform2D;
 }
 export type Note = { id: Id; at: Moment } & (
   | { kind: 'circle'; position: Vec2; radius: number }
-  | { kind: 'slider'; path: PathInstance; duration: Span; headRadius: number; followRadius: number }
+  | { kind: 'hold'; position: Vec2; radius: number; duration: Span }
+  | {
+      kind: 'slider';
+      path: PathInstance;
+      duration: Span;
+      headRadius: number;
+      followRadius: number;
+      binding?: SliderBinding;
+    }
 );
 export type Trigger =
   | { kind: 'timeline'; at: Moment }
-  | { kind: 'note'; noteId: Id; event: 'hit' | 'miss' | 'slider-complete' | 'slider-fail' };
+  | {
+      kind: 'note';
+      noteId: Id;
+      event:
+        | 'hit'
+        | 'miss'
+        | 'slider-start'
+        | 'slider-complete'
+        | 'slider-fail'
+        | 'hold-complete'
+        | 'hold-fail';
+    };
 export type RevealEffect =
   | { kind: 'instant' | 'fade' }
   | { kind: 'slide-in'; offset: Vec2 }
   | { kind: 'pop'; fromScale: number; overshoot: number }
   | { kind: 'directional'; direction: Vec2; region?: Rect }
+  | FanReveal
   | {
       kind: 'path';
       path: PathInstance;
+      // Reveal paths use artwork coordinates. A live link resolves the Slider's current
+      // geometry, transform and direction through the independent chart-to-artwork mapping.
+      linkedSliderId?: Id;
       maskWidth: number;
       completion: 'keep-mask' | 'show-full-layer';
-    };
+    }
+  | OutlineReveal;
+export interface FanReveal {
+  kind: 'fan';
+  // Relative to the target layer/group bounds: (0, 0) top-left, (1, 1) bottom-right.
+  center: Vec2;
+  startAngleRad: number;
+  // The final sector runs clockwise from startAngleRad through this positive angle.
+  sweepAngleRad: number;
+  direction: 'clockwise' | 'counterclockwise';
+  mode: 'open' | 'close';
+}
+export interface OutlineReveal {
+  kind: 'outline';
+  path: PathInstance;
+  linkedSliderId?: Id;
+  drawing: {
+    mode: 'single' | 'bidirectional';
+    // Arc-length position on the original path, independent of reversed direction.
+    start: number;
+    forwardRatio: number;
+  };
+  stroke: { color: string; width: number; glow: number; tips: boolean; tipSize: number };
+  layer: {
+    kind: 'instant' | 'fade' | 'pop';
+    threshold: number;
+    durationUs: Us;
+    fromScale: number;
+    overshoot: number;
+  };
+  lineAfter: { kind: 'keep' | 'fade' | 'hide'; durationUs: Us };
+}
 export interface RevealClip {
   id: Id;
   layerId: Id;
@@ -119,19 +197,53 @@ export interface RevealClip {
     { kind: 'elapsed'; duration: Span } | { kind: 'slider-timeline' | 'slider-follow'; noteId: Id };
   after: 'hold' | 'restore';
   priority: number;
+  delayUs?: Us;
 }
 export interface SoundCue {
   id: Id;
   assetId: Id;
-  trigger: Trigger | { kind: 'reveal-start'; revealId: Id };
+  trigger:
+    | Trigger
+    | { kind: 'reveal-start' | 'outline-start' | 'outline-complete' | 'layer-reveal'; revealId: Id }
+    | { kind: 'slider-tick'; noteId: Id; intervalTicks: number };
   delayUs: Us;
   gain: number;
   pan: number;
+  bus?: 'hit' | 'animation';
+  enabled?: boolean;
 }
+export type AudioBus = 'music' | 'hit' | 'animation';
+export type Mixer = Record<AudioBus, { gain: number; muted: boolean }>;
+export const defaultMixer = (): Mixer => ({
+  music: { gain: 1, muted: false },
+  hit: { gain: 1, muted: false },
+  animation: { gain: 1, muted: false },
+});
+export type TrackId = 'music' | 'notes' | 'layers' | 'outlines' | 'sounds' | 'camera';
+export interface TrackLayout {
+  order: TrackId[];
+  collapsed: TrackId[];
+  hidden: TrackId[];
+}
+export const defaultTracks = (): TrackLayout => ({
+  order: ['music', 'notes', 'layers', 'outlines', 'sounds', 'camera'],
+  collapsed: [],
+  hidden: [],
+});
 export interface CameraPose {
   position: Vec2;
   zoom: number;
   rotationRad: number;
+  pivot?: Vec2;
+}
+export interface CameraShake {
+  id: Id;
+  at: Moment;
+  duration: Span;
+  amplitude: Vec2;
+  rotationRad: number;
+  frequencyHz: number;
+  seed: number;
 }
 export interface CameraKey extends CameraPose {
   id: Id;
@@ -161,7 +273,7 @@ export interface Project {
     }
   >;
   timing: TimingMap;
-  music?: { assetId: Id; gain: number };
+  music?: { assetId: Id; gain: number; analysis?: MusicAnalysis };
   assets: Record<Id, Asset>;
   pixelSources: Record<Id, PixelSource>;
   layers: Record<Id, Layer>;
@@ -170,10 +282,18 @@ export interface Project {
   notes: Record<Id, Note>;
   reveals: Record<Id, RevealClip>;
   sounds: Record<Id, SoundCue>;
-  camera: { base: CameraPose; keys: Record<Id, CameraKey> };
+  camera: {
+    base: CameraPose;
+    keys: Record<Id, CameraKey>;
+    shakes?: Record<Id, CameraShake>;
+    enabled?: boolean;
+  };
+  mixer?: Mixer;
+  tracks?: TrackLayout;
   rules: {
     hitWindowsUs: { perfect: Us; good: Us; ok: Us };
     sliderCompleteRatio: number;
+    holdCompleteRatio?: number;
     sliderTailGraceUs: Us;
   };
 }
@@ -211,7 +331,11 @@ export function createProject(
     notes: {},
     reveals: {},
     sounds: {},
+    mixer: defaultMixer(),
+    tracks: defaultTracks(),
     camera: {
+      enabled: false,
+      shakes: {},
       base: {
         position: { x: artworkSize.width / 2, y: artworkSize.height / 2 },
         zoom: 1,
@@ -222,6 +346,7 @@ export function createProject(
     rules: {
       hitWindowsUs: { perfect: 50000, good: 100000, ok: 150000 },
       sliderCompleteRatio: 0.8,
+      holdCompleteRatio: 0.95,
       sliderTailGraceUs: 80000,
     },
   };

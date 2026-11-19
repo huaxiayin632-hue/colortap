@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "version": "0.5.0",
+  "project": "C:\\Users\\00\\Desktop\\音游编辑器\\示例工程\\第五阶段\\音效与镜头联动.rcproj",
+  "layout": {
+    "leftTop": 88,
+    "headerTop": 88,
+    "canvasBottom": 569,
+    "timelineTop": 595
+  },
+  "sfx": 6,
+  "cameraKeys": 3,
+  "fires": 2,
+  "pausedVoices": 0,
+  "errors": []
+}

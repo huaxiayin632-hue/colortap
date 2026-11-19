@@ -6,6 +6,7 @@ const api: DesktopAPI = {
   openProject: () => ipcRenderer.invoke(channels.openProject),
   saveProject: (request) => ipcRenderer.invoke(channels.saveProject, request),
   importMusic: (handle) => ipcRenderer.invoke(channels.importMusic, handle),
+  importSound: (handle) => ipcRenderer.invoke(channels.importSound, handle),
   importImage: (request) => ipcRenderer.invoke(channels.importImage, request),
   cancelImageImport: () => ipcRenderer.invoke(channels.cancelImageImport),
   onImageProgress: (listener) => {

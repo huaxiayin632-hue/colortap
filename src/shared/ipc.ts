@@ -32,6 +32,7 @@ export interface DesktopAPI {
     saveAs: boolean;
   }): Promise<Result<SaveResult | null>>;
   importMusic(handle: string): Promise<Result<Asset | null>>;
+  importSound(handle: string): Promise<Result<Asset | null>>;
   importImage(request: { handle: string; tileSize: number }): Promise<Result<ImageImport | null>>;
   cancelImageImport(): Promise<Result<void>>;
   onImageProgress(listener: (progress: ImageImportProgress) => void): () => void;
@@ -47,6 +48,7 @@ export const channels = {
   openProject: 'project:open',
   saveProject: 'project:save',
   importMusic: 'music:import',
+  importSound: 'sound:import',
   importImage: 'image:import',
   cancelImageImport: 'image:cancel',
   imageProgress: 'image:progress',

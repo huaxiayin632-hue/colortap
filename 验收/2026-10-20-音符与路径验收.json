@@ -1,0 +1,1003 @@
+{
+  "date": "2026-10-20",
+  "scope": "发光音符、图像路径与职责归一，预计触发时刻规则已统一；默认音效槽位和独立屏幕特效仍待后续阶段",
+  "staticChecks": {
+    "typecheck": "passed",
+    "unitTests": 206,
+    "build": "passed",
+    "unitTestsExecuted": 63,
+    "unitTestsReused": 143,
+    "unitTestScope": ["tests/production.test.ts", "tests/reveal.test.ts", "tests/outline.test.ts"]
+  },
+  "windowChecks": 46,
+  "passed": true,
+  "suites": [
+    {
+      "suite": "binding",
+      "script": "scripts/e2e-binding.mjs",
+      "checks": [
+        {
+          "name": "正式导入曲线 PNG 并准备可编辑镜头/图层演出",
+          "passed": true,
+          "evidence": {
+            "imageSize": {
+              "height": 384,
+              "width": 512
+            },
+            "keyframes": 4
+          }
+        },
+        {
+          "name": "界面绑定和解除绑定保留当前位置，撤销恢复",
+          "passed": true,
+          "evidence": {
+            "headBeforeAndAfter": {
+              "x": 124.99999999999999,
+              "y": 280
+            }
+          }
+        },
+        {
+          "name": "复用图层描边：节点与移动位置共同关联，保存完整",
+          "passed": true
+        },
+        {
+          "name": "镜头平移缩放旋转和图层位移下，真实光点仍覆盖 PNG 曲线",
+          "passed": true,
+          "evidence": [
+            {
+              "t": 2.8,
+              "at": {
+                "x": 95.62284513362036,
+                "y": 264.38358756575906
+              },
+              "rgb": [255, 255, 255]
+            },
+            {
+              "t": 4.4,
+              "at": {
+                "x": 166.0136937998687,
+                "y": 191.87294902048194
+              },
+              "rgb": [255, 255, 255]
+            },
+            {
+              "t": 6.5,
+              "at": {
+                "x": 328.1857161758207,
+                "y": 120.63946181173392
+              },
+              "rgb": [255, 255, 255]
+            }
+          ]
+        },
+        {
+          "name": "实际按住曲线：边移动镜头边追踪，暂停继续后完成",
+          "passed": true,
+          "evidence": {
+            "result": "Slider · 完成-0.0 ms\n有效 100.0% · 中断区间",
+            "paused": 4118571
+          }
+        },
+        {
+          "name": "不跟随移动图案会记录偏离并失败",
+          "passed": true,
+          "evidence": "Slider · 失败+4.8 ms\n有效 10.1% · 中断区间"
+        },
+        {
+          "name": "镜头下拖动节点、复制、删除父分组与撤销",
+          "passed": true,
+          "evidence": {
+            "copiedPathsIndependent": true,
+            "deletionDetached": true,
+            "restored": true
+          }
+        },
+        {
+          "name": "关联路径蒙版随图层与镜头移动，已画段显示、未画段裁切",
+          "passed": true,
+          "evidence": {
+            "revealed": [42, 55, 60],
+            "clipped": [45, 49, 54]
+          }
+        },
+        {
+          "name": "工程重开与素材完整性",
+          "passed": true,
+          "evidence": {
+            "assets": 5
+          }
+        },
+        {
+          "name": "录制移动图案与曲线同轨的正式画布预览",
+          "passed": true,
+          "evidence": {
+            "recording": "路径贴合预览.mp4",
+            "audio": false
+          }
+        }
+      ],
+      "pageErrors": 0,
+      "passed": true,
+      "verification": "沿用此前对应功能的有效检查；本轮未重跑"
+    },
+    {
+      "suite": "glow",
+      "script": "scripts/e2e-glow.mjs",
+      "checks": [
+        {
+          "name": "预览：空心圆环、发光曲线、小光点及按音乐时间出现",
+          "passed": true,
+          "evidence": {
+            "visibleNotes": 2,
+            "circleCenterRgb": [32, 38, 44]
+          }
+        },
+        {
+          "name": "预览：收缩与粒子独立收尾、暂停稳定、定位重建",
+          "passed": true,
+          "evidence": {
+            "particles": 12,
+            "pausedTimeUs": 2070000
+          }
+        },
+        {
+          "name": "实际鼠标命中：使用真实判定触发粒子，向后定位清除未来反馈",
+          "passed": true,
+          "evidence": {
+            "status": "perfect",
+            "timeUs": 2001046,
+            "particles": 12
+          }
+        },
+        {
+          "name": "实际漏点：淡出且没有成功粒子",
+          "passed": true,
+          "evidence": {
+            "phase": "miss",
+            "particles": 0
+          }
+        },
+        {
+          "name": "真实曲线追踪：小光点按弧长移动，暂停冻结、继续完成",
+          "passed": true,
+          "evidence": {
+            "paused": 3813998,
+            "result": "Slider · 完成-7.7 ms\n有效 100.0% · 中断区间"
+          }
+        },
+        {
+          "name": "中途松键：追踪中断并失败，不产生完成反馈",
+          "passed": true,
+          "evidence": {
+            "result": "Slider · 失败-5.6 ms\n有效 16.1% · 中断区间"
+          }
+        },
+        {
+          "name": "保存与重开：原判定半径和曲线数据完整，演示工程可直接播放",
+          "passed": true,
+          "evidence": {
+            "notes": 4,
+            "paths": 1
+          }
+        },
+        {
+          "name": "录制正式画布中的完整视觉演示",
+          "passed": true,
+          "evidence": {
+            "recording": "光环与曲线预览.mp4",
+            "audio": false
+          }
+        }
+      ],
+      "pageErrors": 0,
+      "passed": true,
+      "verification": "沿用此前对应功能的有效检查；本轮未重跑"
+    },
+    {
+      "suite": "stage3",
+      "script": "scripts/e2e-chart.mjs",
+      "checks": [
+        {
+          "name": "实际窗口创建工程、导入音乐和 1/4、1/8、1/16 节拍放置 Circle",
+          "passed": true
+        },
+        {
+          "name": "创建 Slider，通过鼠标操作节点和控制柄，添加/删除节点及撤销",
+          "passed": true
+        },
+        {
+          "name": "折线/贝塞尔切换、方向和速度可编辑，预览滑球按弧长位置实际渲染",
+          "passed": true
+        },
+        {
+          "name": "框选/批选、复制、独立路径副本、批量拖动和删除支持撤销重做",
+          "passed": true
+        },
+        {
+          "name": "谱面时间轴拖动时间和 Slider 时长，撤销后恢复，项目重新打开完整保留",
+          "passed": true
+        },
+        {
+          "name": "真实鼠标/键盘按音乐时间完成 Circle Perfect/Good/Miss 与弯曲 Slider 追踪",
+          "passed": true,
+          "evidence": {
+            "circleResults": ["perfect", "good", "miss"],
+            "windowsUs": {
+              "good": 100000,
+              "ok": 150000,
+              "perfect": 50000
+            },
+            "sliderEffectiveRatio": 1,
+            "eventIdsVerified": true
+          }
+        },
+        {
+          "name": "Slider 真实松键/偏离区间与失败，暂停冻结，继续与跳转重置一致",
+          "passed": true
+        },
+        {
+          "name": "缩放和平移后的逻辑输入判定保持一致",
+          "passed": true
+        },
+        {
+          "name": "100 层 PSD 旧工程与谱面并存，排序、保存重开和音乐仍正常",
+          "passed": true,
+          "evidence": {
+            "example": "C:\\Users\\00\\Desktop\\音游编辑器\\test-results\\stage3\\百图层回归\\谱面与Slider练习.rcproj",
+            "layers": 110,
+            "notes": 4
+          }
+        }
+      ],
+      "pageErrors": 0,
+      "passed": true,
+      "verification": "沿用此前对应功能的有效检查；本轮未重跑"
+    },
+    {
+      "suite": "stage5",
+      "script": "scripts/e2e-production.mjs",
+      "checks": [
+        {
+          "name": "Windows 窗口启动、新音效/镜头界面可用，长按创建入口移除",
+          "passed": true
+        },
+        {
+          "name": "真实 PSD 与音乐导入，旧画面构图不偏移",
+          "passed": true,
+          "evidence": {
+            "size": {
+              "height": 3700,
+              "width": 6111
+            },
+            "layers": 29
+          }
+        },
+        {
+          "name": "WAV、MP3、OGG 音效真实解码、独立素材、重命名与试听",
+          "passed": true,
+          "evidence": {
+            "formats": [".wav", ".mp3", ".ogg", ".wav", ".wav", ".wav"],
+            "contexts": 1
+          }
+        },
+        {
+          "name": "界面创建三个 Circle、一条曲线 Slider 并分别绑定音效",
+          "passed": true
+        },
+        {
+          "name": "Circle → 白线/整层、Slider 完成 → 后续图层，配置分阶段音效",
+          "passed": true
+        },
+        {
+          "name": "三个镜头关键帧：全景 → 面部 → 恢复，编辑自定义贝塞尔与节拍震动",
+          "passed": true
+        },
+        {
+          "name": "画布拖动/滚轮调整镜头可撤销，编辑画布缩放独立",
+          "passed": true
+        },
+        {
+          "name": "镜头关键帧在时间轴拖动、复制、删除和撤销；六轨排序不改变图层顺序",
+          "passed": true
+        },
+        {
+          "name": "混音静音作用于真实音频信号；素材替换/删除引用可撤销",
+          "passed": true
+        },
+        {
+          "name": "时间音效在六轨中吸附拖动、复制/删除/撤销，延迟/声像和音量真实生效",
+          "passed": true,
+          "evidence": {
+            "nominalUs": 11125000,
+            "voices": 1,
+            "gain": 0.6,
+            "pan": 0.2
+          }
+        },
+        {
+          "name": "随机跳转直接恢复镜头/震动及图层，六轨标签保持对齐",
+          "passed": true,
+          "evidence": {
+            "pose": {
+              "position": {
+                "x": 3071.262874437415,
+                "y": 1135.046660332825
+              },
+              "zoom": 2.2152108155017407,
+              "rotationRad": 0.05186511982523162,
+              "pivot": {
+                "x": 3002.456047903349,
+                "y": 1079.2091398817531
+              }
+            },
+            "alignment": [
+              {
+                "delta": 0
+              },
+              {
+                "delta": 0
+              },
+              {
+                "delta": 0
+              },
+              {
+                "delta": 0
+              },
+              {
+                "delta": 0
+              },
+              {
+                "delta": 0
+              }
+            ]
+          }
+        },
+        {
+          "name": "Preview 自动成功演出、音效叠加；暂停清空、跳转不补播过去音效",
+          "passed": true,
+          "evidence": {
+            "maxAudible": 3,
+            "contexts": 1
+          }
+        },
+        {
+          "name": "Playtest 真实点击和 Slider 追踪：镜头运动不改变判定，音效/白线/后续演出联动",
+          "passed": true,
+          "evidence": {
+            "rows": [
+              {
+                "status": "perfect",
+                "progress": 0,
+                "text": "Circle · Perfect-8.1 ms"
+              },
+              {
+                "status": "perfect",
+                "progress": 0,
+                "text": "Circle · Perfect-7.8 ms"
+              },
+              {
+                "status": "perfect",
+                "progress": 0,
+                "text": "Circle · Perfect-9.8 ms"
+              },
+              {
+                "status": "complete",
+                "progress": 1,
+                "text": "Slider · 完成-24.1 ms有效 100.0% · 中断区间"
+              }
+            ],
+            "maxAudible": 3
+          }
+        },
+        {
+          "name": "Playtest 故意 Miss/松键：不播放成功音效，不触发完成演出",
+          "passed": true,
+          "evidence": [
+            {
+              "status": "perfect",
+              "progress": 0,
+              "text": "Circle · Perfect-4.0 ms"
+            },
+            {
+              "status": "miss",
+              "progress": 0,
+              "text": "Circle · Miss"
+            },
+            {
+              "status": "perfect",
+              "progress": 0,
+              "text": "Circle · Perfect-5.2 ms"
+            },
+            {
+              "status": "failed",
+              "progress": 0.5926175,
+              "text": "Slider · 失败-22.6 ms有效 59.3% · 中断区间5.615–6.430 秒 · 松键"
+            }
+          ]
+        },
+        {
+          "name": "保存并重开恢复音效/镜头/六轨及所有 PSD/谱面绑定，反复重播无声源累积",
+          "passed": true,
+          "evidence": {
+            "voices": 0,
+            "buffers": 6,
+            "restoredFields": 8
+          }
+        },
+        {
+          "name": "音效准备较慢时暂停或定位，准备结束后不会自行开始旧播放",
+          "passed": true,
+          "evidence": {
+            "cancelled": true,
+            "playing": false
+          }
+        }
+      ],
+      "pageErrors": 0,
+      "passed": true,
+      "verification": "沿用此前对应功能的有效检查；本轮未重跑"
+    },
+    {
+      "suite": "nominal-time",
+      "source": "Windows Electron 实际界面抽查；仅替代文件选择器答案",
+      "verification": "本轮重跑",
+      "checks": [
+        {
+          "name": "漏点标记计入判定窗口和音效延迟",
+          "passed": true,
+          "evidence": {
+            "noteAtUs": 1000000,
+            "goodWindowUs": 100000,
+            "delayUs": 50000,
+            "markerUs": 1150000
+          }
+        },
+        {
+          "name": "修改窗口后标记更新，撤销重做和点击定位一致",
+          "passed": true,
+          "evidence": {
+            "goodWindowUs": 150000,
+            "markerUs": 1200000,
+            "playheadUs": 1200000
+          }
+        },
+        {
+          "name": "另存与重开保留触发、延迟和预计位置",
+          "passed": true,
+          "evidence": {
+            "markerUs": 1200000,
+            "delayUs": 50000
+          }
+        }
+      ],
+      "pageErrors": 0,
+      "passed": true
+    }
+  ],
+  "evidence": [
+    {
+      "path": "光环与曲线预览.mp4",
+      "kind": "正式画布无声录屏"
+    },
+    {
+      "path": "路径贴合预览.mp4",
+      "kind": "正式画布无声录屏"
+    },
+    {
+      "path": "路径蒙版.png",
+      "kind": "图层和镜头变换下的关联路径蒙版截图"
+    },
+    {
+      "path": "漏点预计时刻.png",
+      "kind": "漏点预计时刻的音效轨道、定位与保存重开检查"
+    }
+  ],
+  "limitations": [
+    "实际 Windows Electron 窗口、鼠标键盘、音乐时钟、Web Audio 与绘图；仅替代系统文件选择器答案。",
+    "移动目标使用固定 2 ms 音乐时间网格近似；自由音符沿用解析判定。",
+    "未重跑极端全尺寸图层压力或完整性能基准，不能据此推断复杂作品性能。",
+    "软件记录不测量物理屏幕或扬声器延迟；无声录屏不构成音效试听验收。"
+  ],
+  "validation": {
+    "rerunWindowChecks": 3,
+    "reusedWindowChecks": 43,
+    "reusedSuites": ["binding", "glow", "stage3", "stage5"],
+    "fullPerformanceRerun": false
+  },
+  "analysisCoreStage": {
+    "date": "2026-10-21",
+    "scope": "TypeScript + Web Worker 离线分析核心，使用已知 BPM、Offset 与起音的合成 PCM 验证误差",
+    "status": "已完成；编辑器接入结果见 currentStage",
+    "dependenciesAdded": ["fft.js@4.0.4 (MIT; 无生产依赖)"],
+    "projectFormatChanged": false,
+    "implementationOwner": "README.md：项目架构与下一阶段落实方案",
+    "algorithm": "spectral-flux-v1",
+    "parameters": {
+      "fftSize": 2048,
+      "hopSize": 128,
+      "minOnsetIntervalUs": 20000,
+      "peakThreshold": 0.06,
+      "minBpm": 40,
+      "maxBpm": 260,
+      "tempoWindowUs": 8000000
+    },
+    "staticChecks": {
+      "typecheck": "passed",
+      "build": "passed",
+      "newUnitTests": {
+        "passed": 25,
+        "total": 25
+      },
+      "scope": ["tests/audio-analysis.test.ts", "tests/audio-analysis-task.test.ts"],
+      "previouslyBlockedFilesystemResult": "见 visualStage.staticChecks.filesystemRetest；原先 8 项已补齐",
+      "otherPriorUnitTestsReused": 187,
+      "fullUnitSuiteRerun": false
+    },
+    "accuracy": {
+      "generatedAt": "2026-10-20T17:09:20.155Z",
+      "truth": "独立生成 PCM 的实际样本位置；20,000 微秒容差一对一匹配。时间误差仅统计已匹配起音，漏检和误检独立计数。",
+      "measurementCases": 23,
+      "totalOnsets": {
+        "expected": 1161,
+        "matched": 1161,
+        "missed": 0,
+        "falsePositives": 0
+      },
+      "stableMatrix": {
+        "sampleRates": [44100, 48000],
+        "bpms": [60, 90, 120, 137.3, 180, 240],
+        "offsetUs": 137321,
+        "cases": 12,
+        "maxMeanAbsoluteUs": 52.375,
+        "maxP95Us": 114,
+        "maxBpmErrorPercent": 0.00014749999999175145,
+        "maxPhaseErrorUs": 50
+      },
+      "cases": [
+        {
+          "name": "90s-fractional",
+          "expected": 206,
+          "matched": 206,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 37.83980582524272,
+          "p95Us": 104,
+          "maxUs": 125,
+          "bpmErrorPercent": 0.00001383831027546023,
+          "phaseErrorUs": 32.000000000029104,
+          "warnings": []
+        },
+        {
+          "name": "antiphase",
+          "expected": 32,
+          "matched": 32,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 42.15625,
+          "p95Us": 90,
+          "maxUs": 90,
+          "bpmErrorPercent": 0.00006000000001282757,
+          "phaseErrorUs": 41,
+          "warnings": []
+        },
+        {
+          "name": "120-to-150",
+          "expected": 72,
+          "matched": 72,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 32.263888888888886,
+          "p95Us": 83,
+          "maxUs": 104,
+          "bpmErrorPercent": null,
+          "phaseErrorUs": null,
+          "warnings": ["tempo-change"]
+        },
+        {
+          "name": "silence-0",
+          "expected": 0,
+          "matched": 0,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 0,
+          "p95Us": 0,
+          "maxUs": 0,
+          "bpmErrorPercent": null,
+          "phaseErrorUs": null,
+          "warnings": ["insufficient-rhythm"]
+        },
+        {
+          "name": "silence-10000",
+          "expected": 0,
+          "matched": 0,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 0,
+          "p95Us": 0,
+          "maxUs": 0,
+          "bpmErrorPercent": null,
+          "phaseErrorUs": null,
+          "warnings": ["insufficient-rhythm"]
+        },
+        {
+          "name": "silence-8000000",
+          "expected": 0,
+          "matched": 0,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 0,
+          "p95Us": 0,
+          "maxUs": 0,
+          "bpmErrorPercent": null,
+          "phaseErrorUs": null,
+          "warnings": ["quiet-audio", "insufficient-rhythm"]
+        },
+        {
+          "name": "middle-silence",
+          "expected": 30,
+          "matched": 30,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 44.13333333333333,
+          "p95Us": 91,
+          "maxUs": 91,
+          "bpmErrorPercent": 0.000012500000012849455,
+          "phaseErrorUs": 49,
+          "warnings": ["quiet-audio"]
+        },
+        {
+          "name": "pickup-accents-missing",
+          "expected": 36,
+          "matched": 36,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 26.75,
+          "p95Us": 83,
+          "maxUs": 83,
+          "bpmErrorPercent": 0.00006999999999646178,
+          "phaseErrorUs": 11,
+          "warnings": []
+        },
+        {
+          "name": "dense-32nds",
+          "expected": 315,
+          "matched": 315,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 37.04761904761905,
+          "p95Us": 104,
+          "maxUs": 125,
+          "bpmErrorPercent": null,
+          "phaseErrorUs": null,
+          "warnings": ["insufficient-rhythm"]
+        },
+        {
+          "name": "drums-and-tone",
+          "expected": 25,
+          "matched": 25,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 1128.28,
+          "p95Us": 1406,
+          "maxUs": 1474,
+          "bpmErrorPercent": 0.00029222222223124206,
+          "phaseErrorUs": 1146.0000000000582,
+          "warnings": []
+        },
+        {
+          "name": "boundary-clicks",
+          "expected": 3,
+          "matched": 3,
+          "missed": 0,
+          "falsePositives": 0,
+          "meanAbsoluteUs": 7,
+          "p95Us": 21,
+          "maxUs": 21,
+          "bpmErrorPercent": null,
+          "phaseErrorUs": null,
+          "warnings": ["insufficient-rhythm"]
+        }
+      ],
+      "assertions": [
+        "90 秒小数 BPM 的末拍累计漂移不超过 20 ms。",
+        "120→150 BPM 的 8 秒参考分段分别恢复对应 BPM，整首建议为空。",
+        "最轻的第一个弱起已显式匹配；240 BPM 三十二分音符 315 个全部匹配。",
+        "均匀密集脉冲不强行认定音乐拍号；静音和少于四个事件无伪 BPM。",
+        "反相双声道与单声道检测相同，输入 PCM 哈希保持不变。"
+      ]
+    },
+    "workerChecks": {
+      "script": "scripts/e2e-audio-analysis.mjs",
+      "passed": true,
+      "checks": [
+        {
+          "name": "真实 Worker 分析 120 秒反相立体声，主线程仍接受点击和文字输入",
+          "passed": true,
+          "evidence": {
+            "durationUs": 120000000,
+            "channels": 2,
+            "elapsedMs": 2740,
+            "onsets": {
+              "expected": 240,
+              "detected": 240,
+              "matched": 240,
+              "missed": 0,
+              "falsePositives": 0,
+              "recall": 1,
+              "precision": 1,
+              "meanAbsoluteUs": 37.30416666666667,
+              "p95Us": 104,
+              "maxUs": 125,
+              "meanSignedUs": 37.30416666666667
+            },
+            "bpm": 119.999992,
+            "frames": 166,
+            "p95FrameMs": 16.800000000000182,
+            "inputLatencyMs": 60,
+            "inputPreserved": true
+          }
+        },
+        {
+          "name": "复制阶段取消立即终止，之后仍能启动新分析",
+          "passed": true,
+          "evidence": {
+            "state": "AbortError",
+            "running": false
+          }
+        },
+        {
+          "name": "计算中换任务：旧任务取消，新音频独立完成且保留来源身份",
+          "passed": true,
+          "evidence": {
+            "oldState": "AbortError",
+            "nextState": "done",
+            "source": {
+              "assetId": "fixture-3",
+              "sha256": "known-PCM-16-90"
+            },
+            "bpm": 89.999969
+          }
+        }
+      ],
+      "pageErrors": 0
+    },
+    "boundaries": [
+      "真实 Electron 协议和 CSP 下运行构建后的任务模块及 Web Worker；使用独立测试页面，未接入编辑器面板或谱面操作。",
+      "分析时间相对已解码 PCM 起点；未加入工程 Offset，不测量压缩解码延迟、音符吸附误差或物理输出/输入设备延迟。",
+      "phaseUs 仅表示模一拍的网格相位，不保证识别小节第一拍；相对强度和支持程度不是正确概率。",
+      "所有准确率结果均来自合成 PCM；真实歌曲、噪声及渐强音色仍须后续实测。",
+      "每个任务额外占用一份分析 PCM；没有整首频谱缓存、Worker 池、自动重试或第二播放时钟。"
+    ],
+    "cleanup": "关键结果归入此记录；合成音频不落盘，脚本结束清理测试页面、构建副本和 Electron 临时配置；忽略目录中的原始数值结果可由 test:analysis 重建。",
+    "changedFiles": [
+      "src/core/audio-analysis.ts",
+      "src/renderer/audio/audio-analysis-task.ts",
+      "src/renderer/audio/audio-analysis.worker.ts",
+      "tests/audio-analysis.test.ts",
+      "tests/audio-analysis-task.test.ts",
+      "tests/fixtures/audio-analysis.ts",
+      "scripts/e2e-audio-analysis.mjs",
+      "package.json",
+      "package-lock.json",
+      "THIRD_PARTY_NOTICES.md",
+      "README.md",
+      "验收/2026-10-20-音符与路径验收.json"
+    ],
+    "pending": [
+      "用代表性真实歌曲评估误检、漏检及半倍速歧义，不以本轮合成结果承诺歌曲准确率。",
+      "钢笔与视觉的真实窗口验收见 visualStage.pending；Cytus 往返扫描线仍另开阶段。"
+    ]
+  },
+  "currentStage": {
+    "date": "2026-10-21",
+    "scope": "卡点编辑接入：BPM/Offset、起音标记、细分网格、智能吸附、批量头尾对齐、人工校正及保存恢复",
+    "status": "本阶段实现与必要验证完成；停下对齐后续阶段",
+    "dependenciesAdded": [],
+    "dependencyOwner": "analysisCoreStage.dependenciesAdded；继续使用 fft.js@4.0.4，无新运行时",
+    "implementationOwner": "README.md：音乐卡点辅助、当前架构与自动卡点的数据、交互与后台职责",
+    "projectFormat": {
+      "schemaVersion": 1,
+      "extension": "music.analysis 可选字段，包含来源哈希与可序列化 AudioAnalysis；类型归 shared/audio-analysis.ts",
+      "compatibility": "旧工程可读；带分析字段的新工程需使用本次编辑器，旧版严格读取器不能识别",
+      "saved": ["分析结果与参数", "已采用 TimingMap", "谱面时间及各时长基准"],
+      "sessionOnly": ["吸附模式与范围", "选择", "未采用 BPM/Offset 草稿"],
+      "excluded": ["PCM", "频谱", "波形副本", "Worker", "分析进度"]
+    },
+    "decisions": [
+      "重新分析只更新建议，不改已有谱面、时长或已采用节奏；显式采用初始 BPM/Offset 保留后续变速点，按节拍内容联动、固定时间内容保持。",
+      "起音命中存整数微秒，范围外保留原始位置；等距时按强度、再按较早时间选择。选择音符本身不提交修改。",
+      "组拖动只吸附抓取的音符，其他音符跟随共同位移；网格模式仅作整数 tick 舍入。",
+      "批量起点对齐保留 duration 类型，跨变速时预览实际结束时间；尾端是显式操作，只匹配头部之后的起音并转为固定秒时长。位移为零也固定相应字段的时间基准。",
+      "复用解码 AudioBuffer、单一音乐时钟、原历史/schema/保存服务；音符拖动与批量对齐共用 set-note-times，不建旁路文件、缓存、任务池或恢复机制。",
+      "换工程、音乐、来源哈希或播放 buffer 时取消；普通音符编辑不取消。保存期间的结果延后提交，避免误标保存状态。"
+    ],
+    "staticChecks": {
+      "typecheck": "passed；最后两处对齐修正后复验通过",
+      "build": "passed；最后修正后重建，正式 bundle 包含约 25.38 kB 分析 Worker",
+      "unitTests": { "files": 25, "passed": 245, "total": 245 },
+      "newUnitTests": { "file": "tests/audio-assist.test.ts", "passed": 11, "total": 11 },
+      "finalFocusedRetest": {
+        "passed": 11,
+        "total": 11,
+        "scope": "零位移显式对齐固定时间基准；尾端跳过头部之前的候选，选取另一个合法起音",
+        "reused": "其余全量单元与窗口结果继续有效，无新改动影响其常规路径"
+      },
+      "formatAndDiff": "passed"
+    },
+    "windowChecks": {
+      "script": "scripts/e2e-audio-assist.mjs",
+      "source": "正式 Electron 编辑器、真实 Worker、音乐时钟、界面输入和文件保存；仅替代系统文件选择器答案",
+      "fixture": { "durationUs": 180000000, "sampleRate": 48000, "bpm": 120, "offsetUs": 137321 },
+      "verification": "7 组通过；最后两处边界修正前执行，其后由相关单元补验，不重复整套窗口检查",
+      "checks": [
+        {
+          "name": "分析中继续播放、切换模式和编辑网格，结果不改谱面",
+          "passed": true,
+          "evidence": {
+            "onsets": 360,
+            "playingDuringAnalysis": true,
+            "notesPreserved": true,
+            "timingPreserved": true
+          }
+        },
+        {
+          "name": "波形、细分网格与起音共用坐标，选择起音只定位",
+          "passed": true,
+          "evidence": {
+            "firstOnsetUs": 137313,
+            "visibleMarkers": 14,
+            "subdivisions": 98,
+            "notesPreserved": true
+          }
+        },
+        {
+          "name": "BPM 半倍速、Offset 采用为一条历史，按拍联动且按秒保持",
+          "passed": true,
+          "evidence": {
+            "beatNoteUs": 3137321,
+            "fixedNoteUs": 1150123,
+            "offsetUs": 137321,
+            "tempoPoints": 2
+          }
+        },
+        {
+          "name": "批量起点对齐预览、未匹配保持、长音符时长及一次撤销重做",
+          "passed": true,
+          "evidence": {
+            "changed": 5,
+            "unmatched": 1,
+            "exactMicroseconds": true,
+            "durationsPreserved": true,
+            "oneUndo": true
+          }
+        },
+        {
+          "name": "智能起音组拖动保持间距、范围外不吸附、Alt 暂停吸附",
+          "passed": true,
+          "evidence": {
+            "groupShiftUs": 500042,
+            "outsideRawShiftUs": 100000,
+            "altRawShiftUs": 490000
+          }
+        },
+        {
+          "name": "显式尾端对齐、精确人工校正与重新分析保留人工结果",
+          "passed": true,
+          "evidence": {
+            "manualTimeUs": 1234567,
+            "cancelKeptSuggestions": true,
+            "reanalysisPreservedNotes": true,
+            "tailUndoPreservedDurationBasis": true
+          }
+        },
+        {
+          "name": "分析中换音乐不串结果，撤销恢复旧建议，另存重开恢复全部数据",
+          "passed": true,
+          "evidence": {
+            "sourceSwitchInvalidated": true,
+            "undoRestoredSuggestions": true,
+            "portableAssets": true,
+            "restored": ["analysis", "timing", "notes", "durationBases"]
+          }
+        }
+      ],
+      "pageErrors": 0,
+      "passed": true
+    },
+    "boundaries": [
+      "复用 analysisCoreStage 的算法误差与独立 Worker 性能结果；本阶段未更改算法计算。",
+      "本阶段窗口使用合成 WAV，不证明真实歌曲精度、压缩解码延迟、物理输入/输出延迟或复杂作品性能。",
+      "手动录入、命中起音及保存恢复以整数微秒保持；网格量化与算法检测误差分开。",
+      "不扩展当前音乐时间判定；Cytus 往返扫描线继续另开阶段。",
+      "本次窗口结果不替代 visualStage 的钢笔与新增光效验收。"
+    ],
+    "cleanup": "正式验收入口只收录音乐卡点.png 关键截图和本记录的数值；可重建的报告、失败截图及其他过程截图不作为保留证据。生成 WAV、测试工程与临时 Electron 配置由脚本结束时清除。",
+    "evidence": [
+      {
+        "path": "音乐卡点.png",
+        "kind": "正式编辑器的卡点面板、波形、细分网格与起音标记；已实际查看"
+      }
+    ],
+    "changedFiles": [
+      "src/shared/audio-analysis.ts",
+      "src/shared/models.ts",
+      "src/shared/schema.ts",
+      "src/core/audio-analysis.ts",
+      "src/core/note-alignment.ts",
+      "src/core/timing.ts",
+      "src/application/history.ts",
+      "src/renderer/audio/analysis-controller.ts",
+      "src/renderer/audio/AnalysisPanel.vue",
+      "src/renderer/chart/controller.ts",
+      "src/renderer/state/editor.ts",
+      "src/renderer/timeline/TimelinePanel.vue",
+      "src/renderer/timeline/NoteTrack.vue",
+      "src/renderer/App.vue",
+      "src/renderer/style.css",
+      "tests/audio-assist.test.ts",
+      "scripts/e2e-audio-assist.mjs",
+      "package.json",
+      "README.md",
+      "验收/2026-10-20-音符与路径验收.json",
+      "验收/音乐卡点.png"
+    ],
+    "pending": [
+      "代表性真实歌曲的误检、漏检与半倍速歧义评估沿用 analysisCoreStage.pending；不承诺真实歌曲准确率。",
+      "钢笔与新增视觉的窗口验收归 visualStage.pending，Cytus 扫描线及其他后续功能归 README 后续阶段。"
+    ]
+  },
+  "scopeCheck": {
+    "unrelatedLayers": 100,
+    "targetAndAncestors": 2,
+    "fullSceneTriggerQueries": 102,
+    "targetTriggerQueries": 2,
+    "identicalTransform": true,
+    "source": "tests/path-binding.test.ts"
+  },
+  "timingDecision": {
+    "display": "预计触发时刻",
+    "miss": "音符时刻 + Good 窗口 + 音效延迟",
+    "playback": "真实事件和有效追踪",
+    "triggerOwner": "src/core/chart.ts: nominalTriggerTime",
+    "displayOwner": "src/core/sound.ts: nominalSoundTime"
+  },
+  "visualStage": {
+    "date": "2026-10-21",
+    "scope": "钢笔式 Slider、运动光点的光环与烟花粒子、Circle 真实 Perfect 窗口中心提示",
+    "status": "代码与单元验证完成；钢笔与新增光效的真实窗口验收待补",
+    "dependenciesAdded": [],
+    "projectFormatChanged": false,
+    "staticChecks": {
+      "typecheck": "passed",
+      "build": "passed",
+      "focusedUnitTests": {
+        "passed": 51,
+        "total": 51
+      },
+      "scriptSyntaxAndCodeFormatting": "passed",
+      "previousFullUnitTests": {
+        "passed": 201,
+        "total": 209,
+        "sandboxBlocked": 8
+      },
+      "filesystemRetest": {
+        "passed": 22,
+        "total": 22,
+        "scopes": ["tests/repository.test.ts", "tests/images.test.ts"],
+        "previouslyBlockedResolved": 8,
+        "result": "完全访问环境正常执行，全部通过"
+      }
+    },
+    "windowChecks": {
+      "executed": 0,
+      "pendingSuites": ["test:chart", "test:glow", "test:binding"],
+      "reason": "卡点编辑的窗口检查不覆盖钢笔与新增光效；旧视觉录屏不证明新增效果。"
+    },
+    "decision": "钢笔与视觉窗口验收须独立补齐，卡点编辑验证不替代。",
+    "pending": [
+      "执行 test:chart、test:glow、test:binding 的真实窗口检查，实际观察新增曲线绘制与光效。",
+      "验收通过后更新现有关键媒体；无关压力测试不重复运行。"
+    ]
+  }
+}

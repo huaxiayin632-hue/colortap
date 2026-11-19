@@ -2,15 +2,71 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { Editor } from '../state/editor';
 import { formatTime } from '../../core/timing';
+import { onsetIndex, type SnapMode } from '../../core/note-alignment';
 import Waveform from './Waveform.vue';
+import NoteTrack from './NoteTrack.vue';
+import RevealTrack from './RevealTrack.vue';
+import SoundTrack from './SoundTrack.vue';
+import CameraTrack from './CameraTrack.vue';
+import { defaultTracks, type TrackId, type TrackLayout } from '../../shared/models';
 
 const props = defineProps<{ editor: Editor }>();
 const scroller = ref<HTMLDivElement>();
+const labelScroller = ref<HTMLElement>();
 const pixelsPerSecond = ref(44);
-const snap = ref(true),
-  divisions = ref(4);
+const divisions = props.editor.chart.divisions;
 const scrollLeft = ref(0),
   visibleWidth = ref(1000);
+const rowHeights = ref<Record<TrackId, number>>({
+  music: 66,
+  notes: 32,
+  layers: 62,
+  outlines: 62,
+  sounds: 46,
+  camera: 48,
+});
+function syncScroll(event: Event, fromLabels = false) {
+  const source = event.target as HTMLElement;
+  const target = fromLabels ? scroller.value : labelScroller.value;
+  if (target && Math.abs(target.scrollTop - source.scrollTop) > 0.5)
+    target.scrollTop = source.scrollTop;
+  if (!fromLabels) scrollLeft.value = source.scrollLeft;
+}
+const layout = computed(() => props.editor.project.value.tracks ?? defaultTracks());
+const labels: Record<TrackId, string> = {
+  music: '背景音乐',
+  notes: 'Circle / Slider',
+  layers: '图层演出',
+  outlines: '白线描绘',
+  sounds: '音效',
+  camera: '镜头',
+};
+const readonly = computed(
+  () => props.editor.busy.value || props.editor.chart.mode.value !== 'edit',
+);
+const rowHeight = (id: TrackId) =>
+  layout.value.hidden.includes(id) || layout.value.collapsed.includes(id)
+    ? 26
+    : rowHeights.value[id];
+function trackPatch(patch: Partial<TrackLayout>) {
+  props.editor.edit({ type: 'set-tracks', tracks: { ...layout.value, ...patch } });
+}
+function toggleTrack(id: TrackId, kind: 'collapsed' | 'hidden') {
+  trackPatch({
+    [kind]: layout.value[kind].includes(id)
+      ? layout.value[kind].filter((x) => x !== id)
+      : [...layout.value[kind], id],
+  });
+}
+function reorder(id: TrackId, index: number) {
+  const order = layout.value.order.filter((x) => x !== id);
+  order.splice(Math.max(0, Math.min(order.length, index)), 0, id);
+  trackPatch({ order });
+}
+function dropTrack(e: DragEvent, id: TrackId) {
+  const source = e.dataTransfer?.getData('application/rhythm-track') as TrackId;
+  if (layout.value.order.includes(source)) reorder(source, layout.value.order.indexOf(id));
+}
 const durationSeconds = computed(() =>
   Math.max(30, props.editor.playback.value.durationUs / 1_000_000),
 );
@@ -52,18 +108,24 @@ const beats = computed(() => {
     durationSeconds.value * 1_000_000,
     ((scrollLeft.value + visibleWidth.value) / pixelsPerSecond.value) * 1_000_000,
   );
-  const start = Math.max(0, Math.floor(tempo.timeToTick(startUs) / 960));
-  const end = Math.ceil(tempo.timeToTick(endUs) / 960);
-  const projectedBeat =
-    (60 / props.editor.project.value.timing.points[0].bpm) * pixelsPerSecond.value;
-  const stride = Math.max(1, Math.ceil(8 / projectedBeat));
-  const result: { x: number; major: boolean; key: number }[] = [];
-  for (let n = Math.floor(start / stride) * stride; n <= end; n += stride)
-    result.push({
-      x: (tempo.tickToTime(n * 960) / 1_000_000) * pixelsPerSecond.value,
-      major: n % 4 === 0,
-      key: n,
-    });
+  return tempo
+    .grid(startUs, endUs, divisions.value, 4e6 / pixelsPerSecond.value)
+    .map((line) => ({ ...line, x: (line.timeUs / 1e6) * pixelsPerSecond.value }));
+});
+const onsetMarks = computed(() => {
+  const onsets = props.editor.analysis.result.value?.onsets ?? [];
+  const start = (scrollLeft.value / pixelsPerSecond.value) * 1e6,
+    end = ((scrollLeft.value + visibleWidth.value) / pixelsPerSecond.value) * 1e6;
+  const result: { timeUs: number; strength: number; x: number; count: number }[] = [];
+  for (let i = onsetIndex(onsets, start); i < onsets.length && onsets[i].timeUs <= end; i++) {
+    const onset = onsets[i],
+      x = (onset.timeUs / 1e6) * pixelsPerSecond.value,
+      last = result.at(-1);
+    if (last && Math.floor(x / 4) === Math.floor(last.x / 4)) {
+      last.count++;
+      if (onset.strength > last.strength) Object.assign(last, { ...onset, x });
+    } else result.push({ ...onset, x, count: 1 });
+  }
   return result;
 });
 let scrubbing: { pointerId: number; resume: boolean } | null = null;
@@ -73,7 +135,7 @@ function seekAt(event: PointerEvent): void {
   let timeUs = Math.round(
     ((event.clientX - rect.left + scroller.value.scrollLeft) / pixelsPerSecond.value) * 1_000_000,
   );
-  if (snap.value && !event.altKey) timeUs = props.editor.tempo.value.snap(timeUs, divisions.value);
+  timeUs = props.editor.tempo.value.resolve(props.editor.chart.resolveMoment(timeUs, event.altKey));
   props.editor.seek(timeUs);
 }
 function down(event: PointerEvent): void {
@@ -118,19 +180,30 @@ onBeforeUnmount(() => observer?.disconnect());
 <template>
   <section class="timeline-panel" aria-label="时间轴">
     <header class="timeline-toolbar">
-      <strong>时间轴</strong>
-      <span class="beat-readout">第 {{ beatLabel }} 拍</span>
-      <label class="checkbox-label"><input v-model="snap" type="checkbox" />节拍吸附</label>
+      <strong>时间轴</strong><span class="beat-readout">第 {{ beatLabel }} 拍</span>
+      <label
+        >音符吸附
+        <select
+          aria-label="音符吸附模式"
+          :value="editor.chart.snapMode.value"
+          @change="
+            editor.chart.snapMode.value = ($event.target as HTMLSelectElement).value as SnapMode
+          "
+        >
+          <option value="off">关闭</option>
+          <option value="grid">节拍网格</option>
+          <option value="onset">智能起音</option>
+        </select>
+      </label>
       <select v-model="divisions" aria-label="节拍细分">
-        <option :value="1">1 拍</option>
-        <option :value="2">1/2 拍</option>
-        <option :value="4">1/4 拍</option>
-        <option :value="8">1/8 拍</option>
-        <option :value="16">1/16 拍</option>
+        <option :value="1">1/4 音符 · 1 拍</option>
+        <option :value="2">1/8 音符 · 1/2 拍</option>
+        <option :value="4">1/16 音符 · 1/4 拍</option>
+        <option :value="8">1/32 音符 · 1/8 拍</option>
+        <option :value="16">1/64 音符 · 1/16 拍</option>
       </select>
-      <span class="toolbar-spacer" />
-      <button @click="jumpToHead">定位播放头</button>
-      <label class="timeline-zoom"
+      <span class="toolbar-spacer" /><button @click="jumpToHead">定位播放头</button
+      ><label class="timeline-zoom"
         >时间缩放<input
           aria-label="时间轴缩放"
           type="range"
@@ -140,26 +213,76 @@ onBeforeUnmount(() => observer?.disconnect());
           @input="zoomAtHead(Number(($event.target as HTMLInputElement).value))"
       /></label>
     </header>
-    <div class="timeline-tracks">
+    <div class="timeline-tracks production-tracks">
       <div class="track-labels">
         <div class="ruler-label">分 : 秒</div>
-        <div class="music-label"><i class="track-dot music-dot" /><span>音乐</span></div>
-        <div><i class="track-dot note-dot" /><span>谱面</span></div>
-        <div><i class="track-dot layer-dot" /><span>图层演出</span></div>
-        <div><i class="track-dot sound-dot" /><span>音效</span></div>
-        <div><i class="track-dot camera-dot" /><span>镜头</span></div>
+        <section
+          ref="labelScroller"
+          class="track-labels-viewport"
+          @scroll="syncScroll($event, true)"
+        >
+          <section class="track-labels-content">
+            <div
+              v-for="(id, index) in layout.order"
+              :key="id"
+              class="timeline-label-row"
+              :data-track-label="id"
+              :style="{ height: rowHeight(id) + 'px' }"
+              :draggable="!readonly"
+              @dragstart="$event.dataTransfer?.setData('application/rhythm-track', id)"
+              @dragover.prevent
+              @drop.prevent="dropTrack($event, id)"
+            >
+              <button
+                :disabled="readonly"
+                :aria-label="`折叠轨道 ${id}`"
+                @click="toggleTrack(id, 'collapsed')"
+              >
+                {{ layout.collapsed.includes(id) ? '▸' : '▾' }}</button
+              ><span>{{ labels[id] }}</span>
+              <nav>
+                <button
+                  :disabled="readonly || index === 0"
+                  :aria-label="`上移轨道 ${id}`"
+                  @click="reorder(id, index - 1)"
+                >
+                  ↑</button
+                ><button
+                  :disabled="readonly || index === layout.order.length - 1"
+                  :aria-label="`下移轨道 ${id}`"
+                  @click="reorder(id, index + 1)"
+                >
+                  ↓</button
+                ><button
+                  :disabled="readonly"
+                  :aria-label="`隐藏轨道 ${id}`"
+                  :aria-pressed="layout.hidden.includes(id)"
+                  @click="toggleTrack(id, 'hidden')"
+                >
+                  {{ layout.hidden.includes(id) ? '○' : '●' }}
+                </button>
+              </nav>
+            </div>
+          </section>
+        </section>
       </div>
       <div
         ref="scroller"
         class="timeline-scroll"
         data-testid="timeline-scroll"
-        @scroll="scrollLeft = ($event.target as HTMLElement).scrollLeft"
+        @scroll="syncScroll($event)"
         @pointerdown="down"
         @pointermove="move"
         @pointerup="up"
         @pointercancel="up"
       >
-        <div class="timeline-content" :style="{ width: contentWidth + 'px' }">
+        <div
+          class="timeline-content"
+          :style="{
+            width: contentWidth + 'px',
+            height: 28 + layout.order.reduce((sum, id) => sum + rowHeight(id), 0) + 'px',
+          }"
+        >
           <div class="ruler" data-testid="timeline-ruler">
             <span v-for="mark in marks" :key="mark.x" :style="{ left: mark.x + 'px' }">{{
               mark.label
@@ -168,30 +291,81 @@ onBeforeUnmount(() => observer?.disconnect());
           <div class="beat-grid">
             <i
               v-for="line in beats"
-              :key="line.key"
-              :class="{ major: line.major }"
+              :key="line.tick"
+              :class="{ major: line.major, subdivision: line.subdivision }"
+              :data-tick="line.tick"
               :style="{ left: line.x + 'px' }"
             />
           </div>
-          <div class="music-track">
+          <div
+            v-for="id in layout.order"
+            :key="id"
+            class="track-row"
+            :data-track="id"
+            :style="{ height: rowHeight(id) + 'px' }"
+          >
             <div
-              :style="{
-                width: (editor.playback.value.durationUs / 1_000_000) * pixelsPerSecond + 'px',
-              }"
-              class="waveform-width"
+              v-if="layout.hidden.includes(id) || layout.collapsed.includes(id)"
+              class="track-summary"
             >
-              <Waveform
-                v-if="editor.buffer.value"
-                :buffer="editor.buffer.value"
+              {{ labels[id] }} ·
+              {{ layout.hidden.includes(id) ? '临时隐藏（演出仍正常播放）' : '已折叠' }}
+            </div>
+            <template v-else>
+              <div v-if="id === 'music'" class="music-track">
+                <div
+                  :style="{
+                    width: (editor.playback.value.durationUs / 1e6) * pixelsPerSecond + 'px',
+                  }"
+                  class="waveform-width"
+                >
+                  <Waveform
+                    v-if="editor.buffer.value"
+                    :buffer="editor.buffer.value"
+                    :pixels-per-second="pixelsPerSecond"
+                  />
+                </div>
+                <span v-if="!editor.buffer.value" class="track-hint">导入音乐后可定位</span>
+                <button
+                  v-for="mark in onsetMarks"
+                  :key="mark.timeUs"
+                  class="onset-marker"
+                  :class="{ selected: editor.analysis.selectedOnset.value === mark.timeUs }"
+                  :style="{ left: mark.x + 'px' }"
+                  :data-time-us="mark.timeUs"
+                  :aria-label="`起音 ${(mark.timeUs / 1e6).toFixed(6)} 秒`"
+                  :title="`${(mark.timeUs / 1e6).toFixed(6)} 秒 · 相对强度 ${mark.strength.toFixed(3)}${mark.count > 1 ? ' · 此列 ' + mark.count + ' 个起音' : ''}`"
+                  @pointerdown.stop
+                  @pointerup.stop
+                  @click.stop="editor.analysis.selectOnset(mark.timeUs)"
+                />
+              </div>
+              <NoteTrack
+                v-else-if="id === 'notes'"
+                :editor="editor"
                 :pixels-per-second="pixelsPerSecond"
               />
-            </div>
-            <span v-if="!editor.buffer.value" class="track-hint">导入音乐后可点击或拖动定位</span>
+              <RevealTrack
+                v-else-if="id === 'layers' || id === 'outlines'"
+                :editor="editor"
+                :pixels-per-second="pixelsPerSecond"
+                :track="id"
+                @resize="rowHeights[id] = $event"
+              />
+              <SoundTrack
+                v-else-if="id === 'sounds'"
+                :editor="editor"
+                :pixels-per-second="pixelsPerSecond"
+                @resize="rowHeights.sounds = $event"
+              />
+              <CameraTrack
+                v-else-if="id === 'camera'"
+                :editor="editor"
+                :pixels-per-second="pixelsPerSecond"
+                @resize="rowHeights.camera = $event"
+              />
+            </template>
           </div>
-          <div class="future-track"><span>Circle / Slider 在后续阶段接入</span></div>
-          <div class="future-track" />
-          <div class="future-track" />
-          <div class="future-track" />
           <div
             class="playhead"
             :style="{ left: headX + 'px' }"

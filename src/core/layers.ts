@@ -147,7 +147,7 @@ export function deleteLayer(project: Project, id: string): void {
       delete project.reveals[key];
     }
   for (const [key, sound] of Object.entries(project.sounds))
-    if (sound.trigger.kind === 'reveal-start' && removedReveals.has(sound.trigger.revealId))
+    if ('revealId' in sound.trigger && removedReveals.has(sound.trigger.revealId))
       delete project.sounds[key];
   // Original image assets stay in the library. Removing a logical layer never destroys source pixels.
 }

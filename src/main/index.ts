@@ -148,7 +148,7 @@ function setupIPC(): void {
       }
     },
   );
-  handle(channels.newProject, projectSchema, async (project) => {
+  handle(channels.newProject, z.unknown(), async (project) => {
     const result = await repository.create(project);
     activeHandle = result.handle;
     dirty = false;
@@ -168,7 +168,13 @@ function setupIPC(): void {
   });
   handle(
     channels.saveProject,
-    z.object({ handle: id, project: projectSchema, saveAs: z.boolean() }).strict(),
+    z
+      .object({
+        handle: id,
+        project: projectSchema.pick({ name: true }).passthrough(),
+        saveAs: z.boolean(),
+      })
+      .strict(),
     async (request) => {
       let file = request.saveAs ? null : repository.filePath(request.handle);
       if (!file) {
@@ -196,6 +202,17 @@ function setupIPC(): void {
     return selected.canceled || !selected.filePaths[0]
       ? null
       : repository.importAudio(projectHandle, selected.filePaths[0]);
+  });
+  handle(channels.importSound, id, async (projectHandle) => {
+    const selected = await dialog.showOpenDialog(window!, {
+      title: '导入音效',
+      properties: ['openFile'],
+      filters: [
+        { name: '音效', extensions: ['wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac', 'opus', 'webm'] },
+      ],
+    });
+    if (selected.canceled || !selected.filePaths[0]) return null;
+    return repository.importAudio(projectHandle, selected.filePaths[0]);
   });
   handle(channels.readAsset, z.object({ handle: id, assetId: id }).strict(), (request) =>
     repository.readAsset(request.handle, request.assetId),

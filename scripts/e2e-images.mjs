@@ -255,6 +255,8 @@ try {
     });
     const from = row('红色'),
       to = row('底色');
+    await from.scrollIntoViewIfNeeded();
+    await to.scrollIntoViewIfNeeded();
     const fromRect = await from.boundingBox(),
       toRect = await to.boundingBox();
     await page.mouse.move(fromRect.x + 65, fromRect.y + 14);
@@ -331,7 +333,7 @@ try {
     assert.match(await page.locator('.status-message').innerText(), /8 位 RGB/);
     await importPicture(small.warning);
     await page.getByRole('dialog', { name: 'PSD 兼容提示' }).waitFor();
-    assert.match(await page.getByRole('dialog', { name: 'PSD 兼容提示' }).innerText(), /screen/);
+    assert.match(await page.getByRole('dialog', { name: 'PSD 兼容提示' }).innerText(), /difference/);
     await page.getByLabel('关闭兼容提示', { exact: true }).click();
   });
   await check('6000 × 6000 / 100 可渲染层后台导入，界面持续响应', async () => {

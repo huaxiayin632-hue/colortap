@@ -48,6 +48,29 @@ export class TempoMap {
     const quantum = 960 / divisions;
     return this.tickToTime(Math.round(this.timeToTick(timeUs) / quantum) * quantum);
   }
+  /** Visible subdivisions only. Thin grids are decimated before generating any lines. */
+  grid(startUs: number, endUs: number, divisions: number, minGapUs: number) {
+    const quantum = 960 / divisions;
+    const lines: { tick: number; timeUs: number; major: boolean; subdivision: boolean }[] = [];
+    for (let i = 0; i < this.segments.length; i++) {
+      const segment = this.segments[i],
+        next = this.segments[i + 1];
+      if (segment.timeUs > endUs || (next && next.timeUs <= startUs)) continue;
+      const step =
+        quantum * 2 ** Math.max(0, Math.ceil(Math.log2(minGapUs / (quantum * segment.usPerTick))));
+      const low = Math.max(0, segment.tick, this.timeToTick(startUs));
+      const high = Math.min(next ? next.tick - 1e-6 : Infinity, this.timeToTick(endUs));
+      for (let tick = Math.ceil(low / step) * step; tick <= high; tick += step) {
+        lines.push({
+          tick,
+          timeUs: this.tickToTime(tick),
+          major: tick % 3840 === 0,
+          subdivision: tick % 960 !== 0,
+        });
+      }
+    }
+    return lines;
+  }
   private find(value: number, field: 'tick' | 'timeUs') {
     let low = 0;
     let high = this.segments.length - 1;

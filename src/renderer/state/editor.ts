@@ -1,14 +1,26 @@
 import { computed, ref, shallowRef } from 'vue';
-import { EditHistory, type EditCommand } from '../../application/history';
+import {
+  EditHistory,
+  type EditCommand,
+  type ChartCommand,
+  type RevealCommand,
+  type ProductionCommand,
+} from '../../application/history';
 import { FrameRecorder } from '../../core/performance';
 import { ResourcePool } from '../../core/resources';
-import { TempoMap } from '../../core/timing';
+import { PlaybackTake } from '../../core/playback';
 import { createProject, type Project, type Size, type Vec2 } from '../../shared/models';
 import type { ImageImport, ImageImportProgress } from '../../shared/images';
 import { inverse, isLocked, parents, point, worldMatrix } from '../../core/layers';
 import { unwrap, type ProcessSample, type ProjectSession } from '../../shared/ipc';
 import { AudioTransport } from '../audio/transport';
+import { SoundEngine } from '../audio/sound-engine';
+import { createAudioAnalysis } from '../audio/analysis-controller';
+import { defaultMixer } from '../../shared/models';
+import { createCamera } from '../camera/controller';
 import type { EditorStage } from '../canvas/stage';
+import { createChart } from '../chart/controller';
+import { createReveals } from '../reveals/controller';
 
 export function createEditor() {
   let history = new EditHistory(createProject());
@@ -47,18 +59,74 @@ export function createEditor() {
   );
   let raf = 0,
     sampleTimer: ReturnType<typeof setInterval> | undefined;
-  let lastUIFrame = 0,
-    lastFPS = 0;
-  const tempo = computed(() => new TempoMap(project.value.timing));
+  let lastFPS = 0;
+  let playbackRequest = 0;
   const music = computed(() =>
     project.value.music ? project.value.assets[project.value.music.assetId] : undefined,
   );
+  const take = new PlaybackTake();
+  const chart = createChart({
+    take,
+    sourceOnly: () => !reveals.audition.value && reveals.override.value === null,
+    revealOverride: () =>
+      reveals.selectedId.value && reveals.override.value !== null
+        ? { clipId: reveals.selectedId.value, progress: reveals.override.value }
+        : null,
+    project: () => history.current,
+    time: () => transport.snapshot().timeUs,
+    playing: () => transport.snapshot().playing,
+    commit: edit,
+    pause,
+    seek,
+    play: togglePlay,
+    selectLayer,
+    notify,
+  });
+  const tempo = chart.tempo;
+  const analysis = createAudioAnalysis({ project, buffer, busy, commit: edit, seek, notify });
+  const reveals = createReveals({ project: () => history.current, chart, commit: edit, notify });
+  const sounds = new SoundEngine(transport, take, (message) => notify(message, 'warning'));
+  const selectedSoundId = ref<string | null>(null),
+    selectedSoundAssetId = ref<string | null>(null);
+  const soundAssets = computed(() => {
+    const used = new Set(Object.values(project.value.sounds).map((cue) => cue.assetId));
+    return Object.values(project.value.assets).filter(
+      (asset) => asset.kind === 'audio' && (asset.audioRole === 'sfx' || used.has(asset.id)),
+    );
+  });
+  const soundStats = shallowRef(sounds.metrics());
+  let soundVersion = -1;
+  const unsubscribeSounds = chart.subscribe((e) => {
+    if (e.kind === 'session-reset') sounds.reset(e.timeUs);
+  });
+  const camera = createCamera({
+    project: () => history.current,
+    time: () => transport.snapshot().timeUs,
+    edit,
+    mode: () => chart.mode.value,
+    snap: () => chart.snap.value,
+    divisions: () => chart.divisions.value,
+    pause,
+    selectedLayer: () => selectedLayerId.value,
+  });
 
   function notify(text: string, kind: 'info' | 'error' | 'success' | 'warning' = 'info'): void {
     notice.value = { text, kind };
   }
+  function syncMusicGain(): void {
+    const mix = project.value.mixer ?? defaultMixer();
+    transport.setGain(mix.music.muted ? 0 : (project.value.music?.gain ?? 0.8) * mix.music.gain);
+  }
   function refresh(): void {
     const next = transport.snapshot();
+    chart.update(next.timeUs);
+    reveals.update(next.timeUs);
+    camera.update(next.timeUs);
+    sounds.update(next.timeUs, next.playing, chart.mode.value);
+    if (soundVersion !== sounds.revision) {
+      soundVersion = sounds.revision;
+      soundStats.value = sounds.metrics();
+    }
     if (
       Object.keys(next).some(
         (key) => next[key as keyof typeof next] !== playback.value[key as keyof typeof next],
@@ -68,10 +136,18 @@ export function createEditor() {
   }
   function publish(): void {
     project.value = history.current;
+    chart.setProject(history.current);
+    reveals.setProject(history.current);
+    camera.setProject(history.current);
     dirty.value = history.dirty;
     canUndo.value = history.canUndo;
     canRedo.value = history.canRedo;
-    transport.setGain(project.value.music?.gain ?? 0.8);
+    syncMusicGain();
+    if (session.value) sounds.setProject(project.value, session.value.handle);
+    if (selectedSoundId.value && !project.value.sounds[selectedSoundId.value])
+      selectedSoundId.value = null;
+    if (selectedSoundAssetId.value && !project.value.assets[selectedSoundAssetId.value])
+      selectedSoundAssetId.value = null;
     if (selectedLayerId.value && !project.value.layers[selectedLayerId.value]) selectLayer(null);
     if (session.value) stage.value?.setScene(project.value, session.value.handle);
     if (session.value)
@@ -90,13 +166,36 @@ export function createEditor() {
       refresh();
     }
   }
-  function edit(command: EditCommand): void {
-    if (busy.value) return;
+  function edit(command: EditCommand | ChartCommand | RevealCommand | ProductionCommand): boolean {
+    if (busy.value) return false;
+    if (
+      chart.mode.value !== 'edit' &&
+      command.type !== 'set-gain' &&
+      command.type !== 'set-mixer' &&
+      command.type !== 'set-audio-analysis'
+    ) {
+      notify('请先切回编辑模式再修改工程', 'warning');
+      return false;
+    }
     try {
-      history.execute(command);
+      history.execute(
+        command.type === 'delete-layer'
+          ? {
+              ...command,
+              atUs: transport.snapshot().timeUs,
+              sourceOnly: !reveals.audition.value && reveals.override.value === null,
+              revealOverride:
+                reveals.selectedId.value && reveals.override.value !== null
+                  ? { clipId: reveals.selectedId.value, progress: reveals.override.value }
+                  : null,
+            }
+          : command,
+      );
       publish();
+      return true;
     } catch (error) {
       notify(error instanceof Error ? error.message : '输入值无效', 'error');
+      return false;
     }
   }
   async function syncMusic(): Promise<void> {
@@ -109,7 +208,7 @@ export function createEditor() {
       return;
     }
     if (transport.assetId === asset.id) {
-      transport.setGain(project.value.music?.gain ?? 0.8);
+      syncMusicGain();
       return;
     }
     const bytes = unwrap(
@@ -117,11 +216,13 @@ export function createEditor() {
     );
     const prepared = await transport.prepare(asset, bytes);
     transport.adopt(prepared);
-    transport.setGain(project.value.music?.gain ?? 0.8);
+    syncMusicGain();
     buffer.value = transport.buffer;
     refresh();
   }
   async function adopt(next: ProjectSession): Promise<void> {
+    analysis.cancel();
+    chart.setMode('edit');
     const previous = session.value;
     transport.unload();
     buffer.value = null;
@@ -134,6 +235,7 @@ export function createEditor() {
     );
     publish();
     stage.value?.setArtwork(next.project.stage.artworkSize, true);
+    chart.setTool(Object.keys(next.project.notes).length ? 'select' : 'layers');
     if (previous) unwrap(await window.desktop.closeSession(previous.handle));
     if (next.warnings.length) notify(next.warnings.join('；'), 'warning');
     else notify(next.filePath ? '工程已打开' : '新工程已准备好，可以导入音乐', 'success');
@@ -189,6 +291,7 @@ export function createEditor() {
   async function importMusic(): Promise<void> {
     await run(async () => {
       if (!session.value) return;
+      chart.setMode('edit');
       const handle = session.value.handle;
       const asset = unwrap(await window.desktop.importMusic(handle));
       if (!asset) return;
@@ -212,9 +315,57 @@ export function createEditor() {
       }
     });
   }
+  async function importSound(replaceId?: string): Promise<void> {
+    await run(async () => {
+      if (!session.value) return;
+      chart.setMode('edit');
+      const handle = session.value.handle,
+        asset = unwrap(await window.desktop.importSound(handle));
+      if (!asset) return;
+      try {
+        const bytes = unwrap(await window.desktop.readAsset({ handle, assetId: asset.id }));
+        const lease = await transport.decode(asset, bytes),
+          b = lease.value;
+        const next = {
+          ...asset,
+          audioRole: 'sfx' as const,
+          audio: {
+            durationUs: Math.round(b.duration * 1e6),
+            channels: b.numberOfChannels,
+            sampleRate: b.sampleRate,
+          },
+        };
+        lease.release();
+        history.execute({ type: 'put-sfx-asset', asset: next, replaceId });
+        publish();
+        selectedSoundAssetId.value = next.id;
+        notify(`已导入音效 ${asset.originalName}`, 'success');
+      } catch (error) {
+        await window.desktop.discardImport({ handle, assetId: asset.id });
+        throw error;
+      }
+    });
+  }
+  async function auditionSound(assetId: string, cueId?: string): Promise<void> {
+    try {
+      const asset = project.value.assets[assetId];
+      if (asset) await sounds.audition(asset, cueId ? project.value.sounds[cueId] : undefined);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '音效试听失败', 'error');
+    }
+  }
+  function copySound(id: string): void {
+    const cue = structuredClone(project.value.sounds[id]);
+    cue.id = crypto.randomUUID();
+    if (cue.trigger.kind === 'timeline')
+      cue.trigger.at = { basis: 'time', timeUs: tempo.value.resolve(cue.trigger.at) + 500000 };
+    else cue.delayUs += 125000;
+    if (edit({ type: 'put-sound', cue })) selectedSoundId.value = cue.id;
+  }
   async function importImage(): Promise<void> {
     await run(async () => {
       if (!session.value) return;
+      chart.setMode('edit');
       pause();
       imageProgress.value = {
         handle: session.value.handle,
@@ -247,6 +398,11 @@ export function createEditor() {
     });
   }
   function selectLayer(id: string | null): void {
+    if (id) {
+      chart.selected.value = [];
+      chart.nodeId.value = null;
+      chart.setTool('layers');
+    }
     selectedLayerId.value = id;
     stage.value?.select(id);
   }
@@ -268,7 +424,6 @@ export function createEditor() {
     if (commit) {
       dragProject = null;
       edit({ type: 'set-layer', id, patch: { transform } });
-      if (session.value) stage.value?.setScene(project.value, session.value.handle);
     } else if (session.value) {
       // Live drag changes rendering only. A single undoable edit is committed on pointer release.
       stage.value?.setScene(
@@ -278,6 +433,7 @@ export function createEditor() {
     }
   }
   async function travel(direction: 'undo' | 'redo'): Promise<void> {
+    if (chart.mode.value !== 'edit') return;
     await run(async () => {
       const oldAssetId = transport.assetId;
       history[direction]();
@@ -294,6 +450,7 @@ export function createEditor() {
     if (id) edit({ type: 'delete-layer', id });
   }
   async function deleteAudio(assetId: string): Promise<void> {
+    if (chart.mode.value !== 'edit') return;
     await run(async () => {
       history.execute({ type: 'delete-audio', assetId });
       publish();
@@ -304,19 +461,34 @@ export function createEditor() {
   async function togglePlay(): Promise<void> {
     if (busy.value) return;
     try {
-      if (transport.snapshot().playing) transport.pause();
-      else await transport.play();
+      if (transport.snapshot().playing) pause();
+      else {
+        const request = ++playbackRequest;
+        if (transport.snapshot().timeUs >= transport.snapshot().durationUs) {
+          transport.seek(0);
+          chart.reset(0);
+        }
+        await sounds.prepare();
+        if (request !== playbackRequest) return;
+        await transport.play();
+      }
       refresh();
     } catch (error) {
       notify(error instanceof Error ? error.message : '无法播放音乐', 'error');
     }
   }
   function seek(timeUs: number): void {
+    playbackRequest++;
+    chart.release();
     transport.seek(timeUs);
+    chart.reset(transport.snapshot().timeUs, 'seek');
     refresh();
   }
   function pause(): void {
+    playbackRequest++;
+    chart.release();
     transport.pause();
+    sounds.pause(transport.snapshot().timeUs);
     refresh();
   }
   function fit(): void {
@@ -331,7 +503,7 @@ export function createEditor() {
         format: 'rhythm-canvas-performance',
         version: 1,
         recordedAt: new Date().toISOString(),
-        stage: 2,
+        stage: 5,
         limitations: [
           '单次报告只代表所打开的工程和采样窗口；真实美术与合成测试必须分别比较',
           '帧率为界面 requestAnimationFrame 间隔统计',
@@ -356,6 +528,7 @@ export function createEditor() {
             }
           : null,
         audio: transport.snapshot(),
+        sounds: sounds.metrics(),
         processes: performanceHistory,
       };
       const file = unwrap(await window.desktop.exportPerformance(JSON.stringify(report, null, 2)));
@@ -365,10 +538,10 @@ export function createEditor() {
   function frame(timestamp: number): void {
     if (document.hidden) frameRecorder.resume();
     else frameRecorder.frame(timestamp);
-    if (timestamp - lastUIFrame >= 1000 / 60) {
-      refresh();
-      lastUIFrame = timestamp;
-    }
+    // Refresh on every display frame. Comparing adjacent rAF intervals with 1000/60
+    // drops alternating frames when the display reports e.g. 16.6 ms instead of 16.667 ms.
+    // Judgement and animation positions still come from the audio clock, never frame counts.
+    refresh();
     if (timestamp - lastFPS >= 1000) {
       fps.value = frameRecorder.snapshot().fps;
       lastFPS = timestamp;
@@ -397,6 +570,9 @@ export function createEditor() {
   function attachStage(value: EditorStage): void {
     stage.value = value;
     value.setArtwork(project.value.stage.artworkSize, true);
+    value.setChart(chart);
+    value.setReveals(reveals);
+    value.setCamera(camera);
     value.onChange = () => {
       zoom.value = value.viewport.zoom;
       sceneRevision.value++;
@@ -412,13 +588,31 @@ export function createEditor() {
     zoom.value = value.viewport.zoom;
   }
   async function dispose(): Promise<void> {
+    analysis.dispose();
+    playbackRequest++;
+    unsubscribeSounds();
+    sounds.dispose();
     cancelAnimationFrame(raf);
     clearInterval(sampleTimer);
     removeProgress?.();
+    chart.dispose();
+    reveals.dispose();
     await transport.dispose();
     resources.dispose();
   }
   return {
+    chart,
+    analysis,
+    sounds,
+    soundAssets,
+    selectedSoundId,
+    selectedSoundAssetId,
+    soundStats,
+    importSound,
+    auditionSound,
+    copySound,
+    camera,
+    reveals,
     project,
     session,
     busy,

@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { EditHistory } from '../src/application/history';
-import { createProject, type Asset } from '../src/shared/models';
+import { EditHistory, applyCommand } from '../src/application/history';
+import { createProject, type Asset, type Project } from '../src/shared/models';
 import { serializeProject, validateProject } from '../src/shared/schema';
+import { identityTransform } from '../src/core/layers';
+import { createSlider } from '../src/core/chart';
+
+function freeze<T>(value: T): T {
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach(freeze);
+    Object.freeze(value);
+  }
+  return value;
+}
 
 const audio = (): Asset => ({
   id: crypto.randomUUID(),
@@ -13,6 +23,85 @@ const audio = (): Asset => ({
 });
 
 describe('document commands and history', () => {
+  it('shares unchanged asset indexes across edits and restores the saved snapshot without serializing it', () => {
+    const project = createProject();
+    const asset = audio();
+    project.assets[asset.id] = asset;
+    const h = new EditHistory(freeze(project));
+    for (let i = 0; i < 100; i++) {
+      h.execute({ type: 'rename', name: `名称 ${i}` });
+      expect(h.current.assets).toBe(project.assets);
+      expect(h.current.pixelSources).toBe(project.pixelSources);
+      expect(h.current.notes).toBe(project.notes);
+    }
+    h.markSaved();
+    const saved = h.current;
+    h.execute({ type: 'rename', name: saved.name });
+    expect(h.current).toBe(saved);
+    expect(h.dirty).toBe(false);
+    h.undo();
+    expect(h.dirty).toBe(true);
+    h.redo();
+    expect(h.current).toBe(saved);
+    expect(h.dirty).toBe(false);
+  });
+  it('changes only selected objects and never mutates command payloads or frozen undo snapshots', () => {
+    const p = createProject(),
+      s = createSlider({ x: 30, y: 40 }, { x: 230, y: 140 }, { basis: 'time', timeUs: 1e6 });
+    const group = (id: string): Project['layers'][string] => ({
+      id,
+      kind: 'group',
+      name: id,
+      childrenBottomToTop: [],
+      isolation: 'pass-through',
+      transform: identityTransform(),
+      opacity: 1,
+      enabled: true,
+      locked: false,
+      initialReveal: 1,
+      blendMode: 'normal',
+    });
+    const a = group(crypto.randomUUID()),
+      b = group(crypto.randomUUID());
+    p.layers[a.id] = a;
+    p.layers[b.id] = b;
+    p.rootLayersBottomToTop = [a.id, b.id];
+    p.notes[s.note.id] = s.note;
+    p.paths[s.path.id] = s.path;
+    const h = new EditHistory(freeze(p));
+    h.execute({ type: 'set-layer', id: a.id, patch: { opacity: 0.4 } });
+    expect(h.current.layers[b.id]).toBe(b);
+    expect(h.current.paths).toBe(p.paths);
+    h.execute({ type: 'move-layer', id: a.id, parentId: b.id, index: 0 });
+    expect(p.rootLayersBottomToTop).toEqual([a.id, b.id]);
+    h.execute({ type: 'move-notes', ids: [s.note.id], delta: { x: 20, y: 10 } });
+    expect(s.note.path.transform.position).toEqual({ x: 0, y: 0 });
+    expect(h.current.paths[s.path.id]).toBe(s.path);
+    const edited = structuredClone(h.current.notes[s.note.id]);
+    h.execute({ type: 'set-note', note: edited });
+    const snapshot = h.current;
+    if (edited.kind === 'slider') edited.path.transform.position.x = 999;
+    expect(h.current).toBe(snapshot);
+    expect(h.current.notes[s.note.id]).not.toEqual(edited);
+    const beforeDelete = freeze(h.current);
+    h.execute({ type: 'delete-layer', id: b.id });
+    expect(h.current.layers).toEqual({});
+    h.undo();
+    expect(h.current).toBe(beforeDelete);
+    expect(() =>
+      applyCommand(beforeDelete, { type: 'set-layer', id: a.id, patch: { opacity: -1 } }),
+    ).toThrow();
+    expect(h.current.layers[a.id].opacity).toBe(0.4);
+  });
+  it('treats equal values with different property order as the same edit and preserves redo', () => {
+    const h = new EditHistory(createProject());
+    h.execute({ type: 'resize-artwork', size: { height: 4200, width: 5500 } });
+    h.undo();
+    const original = h.current;
+    h.execute({ type: 'resize-artwork', size: { height: 6000, width: 6000 } });
+    expect(h.current).toBe(original);
+    expect(h.canRedo).toBe(true);
+  });
   it('undoes and redoes actual BPM and scene edits without mutating prior documents', () => {
     const original = createProject();
     const history = new EditHistory(original);

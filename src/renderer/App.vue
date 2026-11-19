@@ -7,12 +7,45 @@ import CommitInput from './panels/CommitInput.vue';
 import LayerPanel from './panels/LayerPanel.vue';
 import LayerInspector from './panels/LayerInspector.vue';
 import TimelinePanel from './timeline/TimelinePanel.vue';
+import NoteInspector from './chart/NoteInspector.vue';
+import PlaytestPanel from './chart/PlaytestPanel.vue';
+import RevealPanel from './reveals/RevealPanel.vue';
+import SfxLibrary from './audio/SfxLibrary.vue';
+import SoundPanel from './audio/SoundPanel.vue';
+import AnalysisPanel from './audio/AnalysisPanel.vue';
+import CameraPanel from './camera/CameraPanel.vue';
+import type { ChartTool } from './chart/controller';
 
 const editor = createEditor();
+const inspectorTab = ref<'objects' | 'sounds' | 'camera' | 'music'>('objects');
+const inspectorScroll = ref<HTMLElement>();
+function showInspector(tab: typeof inspectorTab.value) {
+  inspectorTab.value = tab;
+  if (inspectorScroll.value) inspectorScroll.value.scrollTop = 0;
+}
+watch(inspectorTab, () => {
+  if (inspectorScroll.value) inspectorScroll.value.scrollTop = 0;
+});
+watch([editor.selectedSoundId, editor.selectedSoundAssetId], (ids) => {
+  if (ids.some(Boolean)) inspectorTab.value = 'sounds';
+});
+watch([editor.camera.selectedId, editor.camera.selectedShake], (ids) => {
+  if (ids.some(Boolean)) inspectorTab.value = 'camera';
+});
+watch(editor.analysis.selectedOnset, (value) => {
+  if (value !== null) showInspector('music');
+});
+watch(editor.camera.tool, (tool) => {
+  if (tool !== 'none') inspectorTab.value = 'camera';
+});
+watch(editor.chart.tool, (tool) => {
+  if (tool !== 'layers') editor.camera.tool.value = 'none';
+});
 const showNew = ref(false);
 const draft = ref({ name: '新工程', width: 6000, height: 6000 });
 const newError = ref('');
 const showPerformance = ref(false);
+const readOnlySettings = computed(() => editor.busy.value || editor.chart.mode.value !== 'edit');
 const totalPrivateMiB = computed(
   () =>
     editor.performanceSample.value?.processes.reduce(
@@ -26,7 +59,7 @@ const memoryLabel = computed(() =>
 const musicDuration = computed(() => formatTime(editor.playback.value.durationUs));
 const audioAssets = computed(() =>
   Object.values(editor.project.value.assets)
-    .filter((asset) => asset.kind === 'audio')
+    .filter((asset) => asset.kind === 'audio' && asset.audioRole !== 'sfx')
     .sort(
       (a, b) => Number(b.id === editor.music.value?.id) - Number(a.id === editor.music.value?.id),
     ),
@@ -67,7 +100,48 @@ function changeSize(axis: 'width' | 'height', value: string, output = false): vo
 function keydown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement;
   const editingText =
-    ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
+    (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) &&
+      !(
+        target instanceof HTMLInputElement &&
+        ['range', 'checkbox', 'radio', 'button'].includes(target.type)
+      )) ||
+    target.isContentEditable;
+  const modal = Boolean(document.querySelector('[role="dialog"]'));
+  if (
+    !editingText &&
+    !modal &&
+    editor.reveals.pathEditing.value &&
+    editor.chart.mode.value === 'edit'
+  ) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      editor.reveals.cancel();
+      return;
+    }
+    if (event.key === 'Enter' && editor.reveals.drawing.value) {
+      event.preventDefault();
+      editor.reveals.finishDrawing();
+      return;
+    }
+    if (event.key === 'Delete') {
+      event.preventDefault();
+      editor.reveals.deleteNode();
+      return;
+    }
+  }
+  if (
+    editor.chart.mode.value === 'playtest' &&
+    !editingText &&
+    !modal &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    ['KeyZ', 'KeyX'].includes(event.code)
+  ) {
+    event.preventDefault();
+    if (!event.repeat) editor.chart.input(event.code, true);
+    return;
+  }
+  if (modal && !((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's')) return;
   if ((event.ctrlKey || event.metaKey) && !event.altKey) {
     const key = event.key.toLowerCase();
     if (key === 's') {
@@ -90,6 +164,28 @@ function keydown(event: KeyboardEvent): void {
       event.preventDefault();
       void editor.redo();
     }
+    if (
+      !editingText &&
+      editor.chart.mode.value === 'edit' &&
+      editor.chart.tool.value !== 'layers'
+    ) {
+      if (key === 'a') {
+        event.preventDefault();
+        editor.chart.selectAll();
+      }
+      if (key === 'd') {
+        event.preventDefault();
+        editor.chart.duplicate();
+      }
+      if (key === 'c') {
+        event.preventDefault();
+        editor.chart.copy();
+      }
+      if (key === 'v') {
+        event.preventDefault();
+        editor.chart.paste();
+      }
+    }
   } else if (
     event.code === 'Space' &&
     !editingText &&
@@ -107,8 +203,55 @@ function keydown(event: KeyboardEvent): void {
     !editor.confirmReplacement.value
   ) {
     event.preventDefault();
-    editor.deleteSelectedLayer();
+    if (editor.chart.mode.value === 'edit' && inspectorTab.value === 'camera') {
+      if (editor.camera.selectedShake.value)
+        editor.edit({ type: 'delete-shake', id: editor.camera.selectedShake.value });
+      else editor.camera.remove();
+      return;
+    }
+    if (
+      editor.chart.mode.value === 'edit' &&
+      inspectorTab.value === 'sounds' &&
+      editor.selectedSoundId.value
+    ) {
+      editor.edit({ type: 'delete-sound', id: editor.selectedSoundId.value });
+      return;
+    }
+    if (editor.chart.mode.value === 'edit' && editor.chart.tool.value !== 'layers') {
+      if (editor.chart.tool.value === 'path' && editor.chart.nodeId.value)
+        editor.chart.deleteNode();
+      else editor.chart.removeNotes();
+    } else editor.deleteSelectedLayer();
+  } else if (!editingText && editor.chart.mode.value === 'edit' && !event.altKey) {
+    const tools: Record<string, ChartTool> = {
+      v: 'select',
+      c: 'circle',
+      s: 'slider',
+      p: 'path',
+      l: 'layers',
+    };
+    if (tools[event.key.toLowerCase()]) {
+      event.preventDefault();
+      editor.chart.setTool(tools[event.key.toLowerCase()]);
+    }
+    if (
+      event.key === 'Enter' &&
+      editor.chart.tool.value === 'slider' &&
+      (editor.chart.sliderDraft.value?.nodes.length ?? 0) >= 2
+    ) {
+      event.preventDefault();
+      editor.chart.finishSlider();
+    }
+    if (event.key === 'Escape') {
+      editor.chart.cancelGesture();
+      editor.chart.choose([]);
+    }
+  } else if (!editingText && event.key === 'Escape') {
+    editor.chart.setMode('edit');
   }
+}
+function keyup(event: KeyboardEvent): void {
+  if (['KeyZ', 'KeyX'].includes(event.code)) editor.chart.input(event.code, false);
 }
 function visibility(): void {
   if (document.hidden) editor.pause();
@@ -122,11 +265,13 @@ watch([editor.project, editor.dirty], () => {
 onMounted(() => {
   void editor.initialize();
   window.addEventListener('keydown', keydown);
+  window.addEventListener('keyup', keyup);
   document.addEventListener('visibilitychange', visibility);
   window.addEventListener('blur', blur);
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', keydown);
+  window.removeEventListener('keyup', keyup);
   document.removeEventListener('visibilitychange', visibility);
   window.removeEventListener('blur', blur);
   void editor.dispose();
@@ -140,7 +285,7 @@ onBeforeUnmount(() => {
         <div class="brand">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M3 9v6M9 4v16M15 7v10M21 10v4" /></svg
-          ><strong>Rhythm Canvas</strong><span class="version">0.2</span>
+          ><strong>Rhythm Canvas</strong><span class="version">0.5.0</span>
         </div>
         <div class="toolbar-group">
           <button :disabled="editor.busy.value" title="Ctrl+N" @click="showNew = true">新建</button>
@@ -154,14 +299,18 @@ onBeforeUnmount(() => {
           <button
             aria-label="撤销"
             title="撤销 Ctrl+Z"
-            :disabled="!editor.canUndo.value || editor.busy.value"
+            :disabled="
+              !editor.canUndo.value || editor.busy.value || editor.chart.mode.value !== 'edit'
+            "
             @click="editor.undo()"
           >
             ↶</button
           ><button
             aria-label="重做"
             title="重做 Ctrl+Y"
-            :disabled="!editor.canRedo.value || editor.busy.value"
+            :disabled="
+              !editor.canRedo.value || editor.busy.value || editor.chart.mode.value !== 'edit'
+            "
             @click="editor.redo()"
           >
             ↷
@@ -175,9 +324,30 @@ onBeforeUnmount(() => {
         >
         <span class="toolbar-spacer" />
         <div class="mode-switch" aria-label="编辑模式">
-          <button class="selected" aria-pressed="true">编辑</button
-          ><button disabled title="演出系统完成后开放">预览</button
-          ><button disabled title="判定系统完成后开放">试玩</button>
+          <button
+            :class="{ selected: editor.chart.mode.value === 'edit' }"
+            :aria-pressed="editor.chart.mode.value === 'edit'"
+            :disabled="editor.busy.value"
+            @click="editor.chart.setMode('edit')"
+          >
+            编辑
+          </button>
+          <button
+            :class="{ selected: editor.chart.mode.value === 'preview' }"
+            :aria-pressed="editor.chart.mode.value === 'preview'"
+            :disabled="editor.busy.value"
+            @click="editor.chart.setMode('preview')"
+          >
+            预览
+          </button>
+          <button
+            :class="{ selected: editor.chart.mode.value === 'playtest' }"
+            :aria-pressed="editor.chart.mode.value === 'playtest'"
+            :disabled="editor.busy.value"
+            @click="editor.chart.setMode('playtest')"
+          >
+            试玩
+          </button>
         </div>
       </div>
       <div class="toolbar-row transport-row">
@@ -210,10 +380,11 @@ onBeforeUnmount(() => {
             type="number"
             min="0.001"
             step="1"
-            :disabled="editor.busy.value"
+            :disabled="readOnlySettings"
             :value="editor.project.value.timing.points[0].bpm"
             @commit="editor.edit({ type: 'set-bpm', bpm: Number($event) })"
         /></label>
+        <button @click="showInspector('music')">音乐卡点</button>
         <span class="toolbar-spacer" />
         <label class="volume-control"
           >音量<CommitInput
@@ -256,7 +427,7 @@ onBeforeUnmount(() => {
                 class="delete-button"
                 :aria-label="`删除音频 ${asset.originalName}`"
                 title="从工程移除音频，可撤销"
-                :disabled="editor.busy.value"
+                :disabled="editor.busy.value || editor.chart.mode.value !== 'edit'"
                 @click="editor.deleteAudio(asset.id)"
               >
                 删除
@@ -268,6 +439,7 @@ onBeforeUnmount(() => {
             <button :disabled="editor.busy.value" @click="editor.importMusic()">导入音乐</button>
           </div>
         </div>
+        <SfxLibrary :editor="editor" />
         <div class="left-footer">素材原文件随工程保存</div>
       </aside>
 
@@ -275,18 +447,61 @@ onBeforeUnmount(() => {
 
       <aside class="inspector" aria-label="属性">
         <header class="panel-header">
-          <strong>{{ editor.selectedLayer.value ? '对象与工程属性' : '工程属性' }}</strong
-          ><button v-if="editor.selectedLayer.value" @click="editor.selectLayer(null)">
+          <strong>{{
+            editor.chart.selected.value.length
+              ? '音符与工程属性'
+              : editor.selectedLayer.value
+                ? '对象与工程属性'
+                : '工程属性'
+          }}</strong
+          ><button
+            v-if="editor.selectedLayer.value || editor.chart.selected.value.length"
+            @click="
+              editor.selectLayer(null);
+              editor.chart.choose([]);
+            "
+          >
             取消选择
           </button>
         </header>
-        <div class="inspector-scroll">
-          <LayerInspector :editor="editor" />
+        <div ref="inspectorScroll" class="inspector-scroll">
+          <div class="production-tabs">
+            <button
+              :class="{ selected: inspectorTab === 'objects' }"
+              @click="showInspector('objects')"
+            >
+              图层 / 谱面</button
+            ><button
+              :class="{ selected: inspectorTab === 'sounds' }"
+              @click="showInspector('sounds')"
+            >
+              音效</button
+            ><button
+              :class="{ selected: inspectorTab === 'camera' }"
+              @click="showInspector('camera')"
+            >
+              镜头</button
+            ><button
+              :class="{ selected: inspectorTab === 'music' }"
+              @click="showInspector('music')"
+            >
+              卡点
+            </button>
+          </div>
+          <SoundPanel v-if="inspectorTab === 'sounds'" :editor="editor" />
+          <CameraPanel v-if="inspectorTab === 'camera'" :editor="editor" />
+          <AnalysisPanel v-if="inspectorTab === 'music'" :editor="editor" />
+          <template v-if="inspectorTab === 'objects'">
+            <RevealPanel :editor="editor" />
+            <NoteInspector v-if="editor.chart.mode.value !== 'playtest'" :editor="editor" />
+            <PlaytestPanel v-if="editor.chart.mode.value === 'playtest'" :editor="editor" />
+            <LayerInspector :editor="editor" />
+          </template>
           <div class="property-section">
             <label class="stacked-label"
               >工程名称<CommitInput
                 aria-label="工程名称"
-                :disabled="editor.busy.value"
+                :disabled="readOnlySettings"
                 :value="editor.project.value.name"
                 @commit="editor.edit({ type: 'rename', name: $event })"
             /></label>
@@ -300,7 +515,7 @@ onBeforeUnmount(() => {
                   type="number"
                   min="1"
                   step="1"
-                  :disabled="editor.busy.value"
+                  :disabled="readOnlySettings"
                   :value="editor.project.value.stage.artworkSize.width"
                   @commit="changeSize('width', $event)" /></label
               ><label
@@ -309,7 +524,7 @@ onBeforeUnmount(() => {
                   type="number"
                   min="1"
                   step="1"
-                  :disabled="editor.busy.value"
+                  :disabled="readOnlySettings"
                   :value="editor.project.value.stage.artworkSize.height"
                   @commit="changeSize('height', $event)"
               /></label>
@@ -326,7 +541,7 @@ onBeforeUnmount(() => {
                   aria-label="输出宽度"
                   type="number"
                   min="1"
-                  :disabled="editor.busy.value"
+                  :disabled="readOnlySettings"
                   :value="editor.project.value.output.size.width"
                   @commit="changeSize('width', $event, true)" /></label
               ><label
@@ -334,7 +549,7 @@ onBeforeUnmount(() => {
                   aria-label="输出高度"
                   type="number"
                   min="1"
-                  :disabled="editor.busy.value"
+                  :disabled="readOnlySettings"
                   :value="editor.project.value.output.size.height"
                   @commit="changeSize('height', $event, true)"
               /></label>
@@ -349,7 +564,7 @@ onBeforeUnmount(() => {
                 aria-label="第零拍位置"
                 type="number"
                 step="1"
-                :disabled="editor.busy.value"
+                :disabled="readOnlySettings"
                 :value="editor.project.value.timing.beatZeroUs / 1000"
                 @commit="
                   editor.edit({
@@ -389,6 +604,7 @@ onBeforeUnmount(() => {
               </div>
             </dl>
           </div>
+          <PlaytestPanel v-if="editor.chart.mode.value !== 'playtest'" :editor="editor" />
           <button class="diagnostics-button" @click="showPerformance = true">查看运行记录</button>
         </div>
       </aside>
@@ -601,7 +817,7 @@ onBeforeUnmount(() => {
         </dl>
         <p class="help-text">
           记录反映当前工程与采样窗口。纹理占用按 RGBA 估算，不含驱动、屏幕与 Pixi
-          内部滤镜缓存，不能视为总显存。动态路径蒙版尚未实现。
+          内部滤镜缓存，不能视为总显存。路径显现使用矢量分段遮罩，无全画板位图蒙版。
         </p>
         <div class="modal-actions">
           <button :disabled="editor.busy.value" @click="editor.exportPerformance()">

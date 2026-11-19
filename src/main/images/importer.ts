@@ -1,4 +1,11 @@
-import { readPsd, getLayerImageData, initializeCanvas, type Layer as PsdLayer } from 'ag-psd';
+import {
+  readPsd,
+  getLayerImageData,
+  getLayerMaskImageData,
+  getLayerRealMaskImageData,
+  initializeCanvas,
+  type Layer as PsdLayer,
+} from 'ag-psd';
 import { PNG } from 'pngjs';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -7,6 +14,7 @@ import { identityTransform } from '../../core/layers';
 import type { Asset, Layer, PixelSource, Rect } from '../../shared/models';
 import type { ImageImport, ImageWorkerRequest } from '../../shared/images';
 import { alphaBounds, extract, half, type Pixels } from './pixels';
+import { supportedBlendModes } from '../../core/compositing';
 
 initializeCanvas(
   () => {
@@ -224,13 +232,16 @@ export async function importImage(
     count(psd.children ?? []);
     async function convert(input: PsdLayer[]): Promise<string[]> {
       const ids: string[] = [];
+      let clippingBaseId: string | undefined;
       // ag-psd children follow the PSD file's bottom-to-top stacking order.
-      for (const l of input) {
+      for (let layerIndex = 0; layerIndex < input.length; layerIndex++) {
+        const l = input[layerIndex];
+        const isClippingBase = !l.clipping && !!input[layerIndex + 1]?.clipping;
         const id = randomUUID(),
           name = l.name || '未命名图层';
         progress(`处理图层：${name}`, completed, total);
         const blend = l.blendMode ?? 'normal';
-        const base = {
+        const base: Omit<Layer, 'kind'> = {
           id,
           name,
           opacity: l.opacity ?? 1,
@@ -245,18 +256,55 @@ export async function importImage(
           blendMode: blend,
           transform: identityTransform(),
         };
-        if (!['normal', 'pass through'].includes(blend))
+        if (![...supportedBlendModes, 'pass through'].includes(blend))
           warn(
             `「${name}」使用 ${blend} 混合模式，预览暂按普通模式显示；需要精确外观时请导出 PNG。`,
           );
-        if (l.mask || l.realMask || l.vectorMask)
-          warn(`「${name}」含蒙版，当前预览未应用 PSD 蒙版；请导出已应用蒙版的 PNG。`);
+        // -2 may contain a rendered vector mask; -3 is the actual user bitmap mask.
+        const hasRealMaskPixels = l.rawData?.channels.some((c) => c.id === -3 && c.data?.length);
+        const mask =
+          l.realMask && (l.mask?.fromVectorData || hasRealMaskPixels) ? l.realMask : l.mask;
+        if (mask && !mask.fromVectorData) {
+          const pixels = (
+            mask === l.realMask ? getLayerRealMaskImageData(l) : getLayerMaskImageData(l)
+          ) as Pixels | undefined;
+          const origin = l.children ? { x: 0, y: 0 } : { x: l.left ?? 0, y: l.top ?? 0 };
+          const position = {
+            x: (mask.left ?? 0) + (mask.positionRelativeToLayer ? (l.left ?? 0) : 0) - origin.x,
+            y: (mask.top ?? 0) + (mask.positionRelativeToLayer ? (l.top ?? 0) : 0) - origin.y,
+          };
+          const sourceId = pixels
+            ? await pixelSource(pixels, { ...position, width: pixels.width, height: pixels.height })
+            : undefined;
+          base.rasterMask = {
+            ...(sourceId ? { sourceId } : {}),
+            position,
+            defaultValue: (mask.defaultColor ?? 255) / 255,
+            enabled: !mask.disabled,
+            density: l.mask?.userMaskDensity ?? 1,
+            feather: l.mask?.userMaskFeather ?? 0,
+            positionRelativeToLayer: mask.positionRelativeToLayer ?? false,
+          };
+          if (base.rasterMask.feather)
+            warn(
+              `「${name}」的像素蒙版已应用，但额外羽化参数尚未重建；灰度像素中已有的软边会保留。`,
+            );
+        }
+        if (l.vectorMask || l.mask?.fromVectorData)
+          warn(`「${name}」含矢量蒙版，当前仅应用独立的像素蒙版；矢量轮廓尚未重建。`);
         if (l.effects)
           warn(
             `「${name}」含图层效果，当前预览使用原像素，未重建 Photoshop 效果；可导出 PNG 保留外观。`,
           );
-        if (l.clipping)
-          warn(`「${name}」含剪贴关系，当前预览未重建剪贴关系；可合并相关图层后导出 PNG。`);
+        if (l.clipping) {
+          if (clippingBaseId) base.clippingBaseId = clippingBaseId;
+          else {
+            base.enabled = false;
+            warn(`「${name}」找不到同组剪贴底层，已暂停显示以避免漏出原本被裁切的内容。`);
+          }
+        } else clippingBaseId = id;
+        if (isClippingBase && l.blendClippendElements === false)
+          warn(`「${name}」关闭了“将剪贴图层混合成组”，当前按开启此选项计算。`);
         if (l.adjustment)
           warn(`「${name}」是调整图层，当前预览不执行颜色调整；请导出处理后的 PNG。`);
         if (l.fillOpacity !== undefined && l.fillOpacity !== 1)
@@ -276,8 +324,16 @@ export async function importImage(
             expanded: l.opened ?? true,
             isolation: blend === 'pass through' ? 'pass-through' : 'isolated',
           };
-          if (blend === 'pass through' && base.opacity !== 1)
-            warn(`「${name}」的穿透分组透明度暂按隔离分组计算，复杂混合效果可能不同。`);
+          if (
+            blend === 'pass through' &&
+            (base.opacity !== 1 ||
+              base.rasterMask?.enabled ||
+              base.clippingBaseId ||
+              isClippingBase)
+          )
+            warn(
+              `「${name}」的穿透分组含透明度、蒙版或剪贴，暂按隔离分组计算；子层与组外图层的混合可能不同。`,
+            );
           result.metrics.groups++;
         } else {
           const width = Math.max(1, (l.right ?? 0) - (l.left ?? 0)),

@@ -1,0 +1,240 @@
+{
+  "assets": {
+    "547a8fe6-3582-466a-bcaa-4198550f0590": {
+      "audio": {
+        "channels": 2,
+        "durationUs": 18000000,
+        "sampleRate": 48000
+      },
+      "byteLength": 3456044,
+      "id": "547a8fe6-3582-466a-bcaa-4198550f0590",
+      "kind": "audio",
+      "originalName": "示例节拍 120BPM.wav",
+      "relativePath": "assets/audio/547a8fe6-3582-466a-bcaa-4198550f0590.wav",
+      "sha256": "49a4a0e42aa4568aac6df0bc167a976a804c4332e2744f41d057ce531b3e8cd8"
+    }
+  },
+  "camera": {
+    "base": {
+      "position": {
+        "x": 512,
+        "y": 384
+      },
+      "rotationRad": 0,
+      "zoom": 1
+    },
+    "enabled": false,
+    "keys": {},
+    "shakes": {}
+  },
+  "createdAt": "2026-10-16T13:23:56.081Z",
+  "format": "rhythm-canvas",
+  "id": "8cf7fac7-9baf-427d-bfe2-c1f13bbb72f0",
+  "layers": {},
+  "mixer": {
+    "animation": {
+      "gain": 1,
+      "muted": false
+    },
+    "hit": {
+      "gain": 1,
+      "muted": false
+    },
+    "music": {
+      "gain": 1,
+      "muted": false
+    }
+  },
+  "modifiedAt": "2026-10-16T13:37:09.410Z",
+  "music": {
+    "assetId": "547a8fe6-3582-466a-bcaa-4198550f0590",
+    "gain": 0.35
+  },
+  "name": "光环与曲线 · 视觉练习",
+  "notes": {
+    "64f943cd-c364-4ea1-b7f7-f59b7c73e14f": {
+      "at": {
+        "basis": "time",
+        "timeUs": 6000000
+      },
+      "id": "64f943cd-c364-4ea1-b7f7-f59b7c73e14f",
+      "kind": "circle",
+      "position": {
+        "x": 245,
+        "y": 130
+      },
+      "radius": 36
+    },
+    "8691da7a-9b74-41b7-9e68-cc922d9edb3c": {
+      "at": {
+        "basis": "time",
+        "timeUs": 3000000
+      },
+      "duration": {
+        "basis": "time",
+        "durationUs": 2000000
+      },
+      "followRadius": 40,
+      "headRadius": 28,
+      "id": "8691da7a-9b74-41b7-9e68-cc922d9edb3c",
+      "kind": "slider",
+      "path": {
+        "pathId": "87920c6b-edcf-4a40-b73d-b8b53ac1d5d0",
+        "transform": {
+          "pivot": {
+            "x": 0,
+            "y": 0
+          },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotationRad": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          },
+          "skewRad": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      }
+    },
+    "962b549c-2c58-4a7f-8e54-315dad9215bc": {
+      "at": {
+        "basis": "time",
+        "timeUs": 8000000
+      },
+      "id": "962b549c-2c58-4a7f-8e54-315dad9215bc",
+      "kind": "circle",
+      "position": {
+        "x": 120,
+        "y": 250
+      },
+      "radius": 36
+    },
+    "b5f6cb5a-c7f1-400a-a013-2fbcd9d44c15": {
+      "at": {
+        "basis": "time",
+        "timeUs": 2000000
+      },
+      "id": "b5f6cb5a-c7f1-400a-a013-2fbcd9d44c15",
+      "kind": "circle",
+      "position": {
+        "x": 130,
+        "y": 165
+      },
+      "radius": 44
+    }
+  },
+  "output": {
+    "framing": "contain",
+    "size": {
+      "height": 1080,
+      "width": 1920
+    }
+  },
+  "paths": {
+    "87920c6b-edcf-4a40-b73d-b8b53ac1d5d0": {
+      "closed": false,
+      "defaultWidth": 1,
+      "id": "87920c6b-edcf-4a40-b73d-b8b53ac1d5d0",
+      "interpolation": "bezier",
+      "name": "示意弧线",
+      "nodes": [
+        {
+          "handleIn": {
+            "x": 0,
+            "y": 0
+          },
+          "handleOut": {
+            "x": -65,
+            "y": 40
+          },
+          "id": "38676049-26f1-443e-823b-23d9aad2bdf6",
+          "mode": "corner",
+          "point": {
+            "x": 390,
+            "y": 125
+          }
+        },
+        {
+          "handleIn": {
+            "x": -25,
+            "y": -70
+          },
+          "handleOut": {
+            "x": 0,
+            "y": 0
+          },
+          "id": "54848bcc-011b-47b8-a6b2-e8136c1c81fd",
+          "mode": "corner",
+          "point": {
+            "x": 320,
+            "y": 280
+          }
+        }
+      ]
+    }
+  },
+  "pixelSources": {},
+  "reveals": {},
+  "revision": 6,
+  "rootLayersBottomToTop": [],
+  "rules": {
+    "hitWindowsUs": {
+      "good": 100000,
+      "ok": 150000,
+      "perfect": 50000
+    },
+    "sliderCompleteRatio": 0.8,
+    "sliderTailGraceUs": 80000
+  },
+  "schemaVersion": 1,
+  "sounds": {},
+  "sourceDocuments": {},
+  "stage": {
+    "artworkSize": {
+      "height": 768,
+      "width": 1024
+    },
+    "chartSize": {
+      "height": 384,
+      "width": 512
+    },
+    "playfieldRect": {
+      "height": 768,
+      "width": 1024,
+      "x": 0,
+      "y": 0
+    }
+  },
+  "timing": {
+    "beatZeroUs": 0,
+    "points": [
+      {
+        "bpm": 120,
+        "id": "c8c9c946-07dd-4581-9c9b-d0ed868cc862",
+        "meter": [
+          4,
+          4
+        ],
+        "tick": 0
+      }
+    ],
+    "ppq": 960
+  },
+  "tracks": {
+    "collapsed": [],
+    "hidden": [],
+    "order": [
+      "music",
+      "notes",
+      "layers",
+      "outlines",
+      "sounds",
+      "camera"
+    ]
+  }
+}
