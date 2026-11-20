@@ -613,13 +613,17 @@ try {
     }
     await jump(5);
     await page.getByRole('button', { name: 'Slider 工具', exact: true }).click();
-    await drag({ x: 90, y: 250 }, { x: 420, y: 255 });
+    await click({ x: 90, y: 250 });
+    await click({ x: 420, y: 255 });
+    await page.keyboard.press('Enter');
     await save();
     circles = Object.values(p.notes)
       .filter((n) => n.kind === 'circle')
       .sort((a, b) => momentUs(a.at) - momentUs(b.at));
     slider = Object.values(p.notes).find((n) => n.kind === 'slider');
     assert.equal(circles.length, 3);
+    assert.ok(slider, 'Enter commits the Slider path');
+    assert.equal(p.paths[slider.path.pathId].nodes.length, 2);
     await page.getByRole('button', { name: '路径 工具', exact: true }).click();
     await tab('图层 / 谱面');
     await property('Slider 持续秒数', 2);
@@ -633,6 +637,7 @@ try {
     );
     await save();
     slider = p.notes[slider.id];
+    assert.ok(p.paths[slider.path.pathId].nodes[0].handleOut.y < -160);
     for (let i = 0; i < 3; i++) await bindSound(assets[i], circles[i]);
     await bindSound(assets[0], slider, 'slider-start');
     await bindSound(assets[4], slider, 'slider-complete');

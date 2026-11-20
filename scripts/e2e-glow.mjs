@@ -138,6 +138,7 @@ async function jump(seconds) {
   await page.getByLabel('定位到秒', { exact: true }).fill(String(seconds));
   await page.getByLabel('定位到秒', { exact: true }).press('Tab');
   await frames();
+  assert.equal(await time(), Math.round(seconds * 1e6), `Seek to ${seconds}s`);
 }
 async function screen(at) {
   const view = await page.getByTestId('canvas-host').evaluate((el) => ({
@@ -266,7 +267,7 @@ try {
         expected ? rgb.every((v) => v > 210) : rgb.every((v) => v < 90),
         `${seconds}: ${rgb}`,
       );
-      samples.push({ seconds, perfect: appearance.perfect, center: rgb });
+      samples.push({ seconds, timeUs: await time(), perfect: appearance.perfect, center: rgb });
     }
     await jump(2.02);
     await shot('perfect-center');

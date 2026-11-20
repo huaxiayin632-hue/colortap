@@ -594,11 +594,16 @@ try {
     await page.getByRole('button', { name: '编辑', exact: true }).click();
     await jump(5);
     await page.getByRole('button', { name: 'Slider 工具', exact: true }).click();
-    await drag({ x: 80, y: 300 }, { x: 430, y: 300 });
+    await click({ x: 80, y: 300 });
+    await click({ x: 430, y: 300 });
+    await page.keyboard.press('Enter');
     await drag({ x: 80 + 350 / 3, y: 300 }, { x: 150, y: 220 });
     await property('Slider 持续秒数', 2);
     await save();
     slider = Object.values(saved.notes).find((n) => n.kind === 'slider');
+    assert.ok(slider, 'Enter commits the Slider path');
+    assert.equal(saved.paths[slider.path.pathId].nodes.length, 2);
+    assert.ok(saved.paths[slider.path.pathId].nodes[0].handleOut.y < -70);
     sliderClip = await bind(slider.id, Object.keys(saved.layers)[0]);
     await page.getByLabel('复制关联 Slider', { exact: true }).selectOption(slider.id);
     await page.getByRole('button', { name: '关联 Slider 路径', exact: true }).click();

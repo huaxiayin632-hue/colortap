@@ -71,6 +71,7 @@ const environment = {
 delete environment.ELECTRON_RUN_AS_NODE;
 delete environment.ELECTRON_RENDERER_URL;
 let application, page;
+const importedMusic = new Map();
 
 async function check(name, operation) {
   const start = performance.now();
@@ -121,44 +122,56 @@ async function createDocument(name) {
   assert.equal(await page.getByTestId('project-name').innerText(), name);
 }
 async function installAudioObserver() {
-  await page.evaluate(() => {
-    const Base = window.AudioContext;
-    window.__audioContexts = [];
-    window.__audioAnalysers = [];
-    window.__audioStarts = [];
-    window.AudioContext = class extends Base {
-      constructor(...args) {
-        super(...args);
-        window.__audioContexts.push(this);
-      }
-      createGain() {
-        const node = super.createGain(),
-          context = this,
-          connect = node.connect.bind(node);
-        node.connect = function (destination, ...args) {
-          if (destination === context.destination) {
-            const analyser = context.createAnalyser();
-            analyser.fftSize = 2048;
-            analyser.connect(destination);
-            window.__audioAnalysers.push(analyser);
-            return connect(analyser, ...args);
-          }
-          return connect(destination, ...args);
-        };
-        return node;
-      }
-      createBufferSource() {
-        const source = super.createBufferSource(),
-          start = source.start.bind(source),
-          context = this;
-        source.start = (when = 0, offset = 0, ...args) => {
-          window.__audioStarts.push({ when, offset, context });
-          return start(when, offset, ...args);
-        };
-        return source;
-      }
-    };
-  });
+  await page.evaluate(
+    (sampleRate) => {
+      const Base = window.AudioContext;
+      window.__audioContexts = [];
+      window.__audioAnalysers = [];
+      window.__audioStarts = [];
+      window.AudioContext = class extends Base {
+        constructor(...args) {
+          super({ ...args[0], ...(sampleRate ? { sampleRate } : {}) });
+          window.__audioContexts.push(this);
+        }
+        async decodeAudioData(...args) {
+          const buffer = await super.decodeAudioData(...args);
+          window.__decodedAudio = {
+            frames: buffer.length,
+            sampleRate: buffer.sampleRate,
+            durationUs: Math.round(buffer.duration * 1_000_000),
+          };
+          return buffer;
+        }
+        createGain() {
+          const node = super.createGain(),
+            context = this,
+            connect = node.connect.bind(node);
+          node.connect = function (destination, ...args) {
+            if (destination === context.destination) {
+              const analyser = context.createAnalyser();
+              analyser.fftSize = 2048;
+              analyser.connect(destination);
+              window.__audioAnalysers.push(analyser);
+              return connect(analyser, ...args);
+            }
+            return connect(destination, ...args);
+          };
+          return node;
+        }
+        createBufferSource() {
+          const source = super.createBufferSource(),
+            start = source.start.bind(source),
+            context = this;
+          source.start = (when = 0, offset = 0, ...args) => {
+            window.__audioStarts.push({ when, offset, context });
+            return start(when, offset, ...args);
+          };
+          return source;
+        }
+      };
+    },
+    Number(process.env.RHYTHM_TEST_SAMPLE_RATE) || undefined,
+  );
 }
 async function audioEvidence() {
   return page.evaluate(() => {
@@ -293,7 +306,20 @@ try {
         .waitFor();
       await page.locator('[data-testid=waveform][data-ready=true]').waitFor({ timeout: 30000 });
       assert.equal(await page.getByRole('button', { name: '播放', exact: true }).isEnabled(), true);
-      decoded.push(path.extname(file));
+      const audio = await page.evaluate(() => window.__decodedAudio);
+      const expectedSeconds = file === wav ? 18 : 4;
+      // Resampling from 48 kHz to the output device rate can truncate one sample.
+      assert.ok(
+        Math.abs(audio.frames - expectedSeconds * audio.sampleRate) <= 1,
+        `${path.basename(file)}: unexpected decoded length ${JSON.stringify(audio)}`,
+      );
+      const display = (await page.locator('.duration-display').innerText()).trim();
+      const parts = /^\/ (\d+):(\d{2})\.(\d{3})$/.exec(display);
+      assert.ok(parts, `Invalid duration display: ${display}`);
+      const displayedMs = Number(parts[1]) * 60000 + Number(parts[2]) * 1000 + Number(parts[3]);
+      assert.equal(displayedMs, Math.floor(audio.durationUs / 1000));
+      importedMusic.set(file, { ...audio, display });
+      decoded.push({ format: path.extname(file), ...audio, display });
     }
     return { decoded };
   });
@@ -301,11 +327,17 @@ try {
     await page.getByRole('button', { name: '撤销', exact: true }).click();
     await page.locator('.editor-shell[aria-busy=false]').waitFor();
     await page.locator('[data-testid=waveform][data-ready=true]').waitFor();
-    assert.equal((await page.locator('.duration-display').innerText()).trim(), '/ 00:04.000');
+    assert.equal(
+      (await page.locator('.duration-display').innerText()).trim(),
+      importedMusic.get(ogg).display,
+    );
     await page.getByRole('button', { name: '重做', exact: true }).click();
     await page.locator('.editor-shell[aria-busy=false]').waitFor();
     await page.locator('[data-testid=waveform][data-ready=true]').waitFor();
-    assert.equal((await page.locator('.duration-display').innerText()).trim(), '/ 00:18.000');
+    assert.equal(
+      (await page.locator('.duration-display').innerText()).trim(),
+      importedMusic.get(wav).display,
+    );
   });
   await check('真实 Web Audio 播放、有声信号及统一时间轴同步', async () => {
     await page.getByRole('button', { name: '播放', exact: true }).click();
@@ -384,7 +416,7 @@ try {
     await jump(17.7);
     await page.getByRole('button', { name: '播放', exact: true }).click();
     await page.getByRole('button', { name: '播放', exact: true }).waitFor({ timeout: 5000 });
-    assert.ok(Math.abs((await timeUs()) - 18000000) <= 1);
+    assert.ok(Math.abs((await timeUs()) - importedMusic.get(wav).durationUs) <= 1);
     await page.getByRole('button', { name: '播放', exact: true }).click();
     await page.getByRole('button', { name: '暂停', exact: true }).waitFor();
     await page.waitForTimeout(300);
