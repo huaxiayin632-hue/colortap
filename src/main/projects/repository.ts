@@ -5,8 +5,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Asset, Project } from '../../shared/models';
-import type { ProjectSession } from '../../shared/ipc';
-import { isSafeAssetPath, serializeProject, validateProject } from '../../shared/schema';
+import type { ProjectSession, RecoveryEntry, SaveResult } from '../../shared/ipc';
+import { RecoveryStore } from './recovery';
+import { z } from 'zod';
+import { atomicWrite, checkRealPath, eachAsset, hashFile, resolveWithin } from './file-io';
+export { atomicWrite, eachAsset, resolveWithin } from './file-io';
+import { serializeProject, validateProject } from '../../shared/schema';
 import type { ImageImport, ImageWorkerRequest } from '../../shared/images';
 
 interface AssetLocation {
@@ -21,83 +25,144 @@ interface Session {
   filePath: string | null;
   staging: string;
   sources: Map<string, AssetLocation>;
-}
-
-export function resolveWithin(root: string, relative: string): string {
-  if (!isSafeAssetPath(relative)) throw new Error('素材路径不安全');
-  const absolute = path.resolve(root, relative);
-  const difference = path.relative(path.resolve(root), absolute);
-  if (difference.startsWith('..' + path.sep) || difference === '..' || path.isAbsolute(difference))
-    throw new Error('素材超出工程目录');
-  return absolute;
-}
-
-async function checkRealPath(root: string, file: string): Promise<void> {
-  const [realRoot, realFile] = await Promise.all([fs.realpath(root), fs.realpath(file)]);
-  const relative = path.relative(realRoot, realFile);
-  if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative))
-    throw new Error('素材链接指向工程目录以外的位置');
-}
-
-async function hashFile(file: string): Promise<string> {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(file)) hash.update(chunk);
-  return hash.digest('hex');
-}
-
-/** Bound filesystem pressure; wait for all in-flight operations before returning a failure. */
-export async function eachAsset<T>(
-  items: T[],
-  operation: (item: T, index: number) => Promise<void>,
-): Promise<void> {
-  let cursor = 0,
-    failed = false;
-  const results = await Promise.allSettled(
-    Array.from({ length: Math.min(8, items.length) }, async () => {
-      while (!failed) {
-        const index = cursor++;
-        if (index >= items.length) return;
-        try {
-          await operation(items[index], index);
-        } catch (error) {
-          failed = true;
-          throw error;
-        }
-      }
-    }),
-  );
-  const failure = results.find((result) => result.status === 'rejected');
-  if (failure?.status === 'rejected') throw failure.reason;
-}
-
-export async function atomicWrite(file: string, text: string, backup = true): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
-  try {
-    const handle = await fs.open(temporary, 'wx');
-    try {
-      await handle.writeFile(text, 'utf8');
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    if (backup) {
-      try {
-        await atomicWrite(file + '.bak', await fs.readFile(file, 'utf8'), false);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      }
-    }
-    await fs.rename(temporary, file);
-  } finally {
-    await fs.unlink(temporary).catch(() => undefined);
-  }
+  recoveryId: string;
+  settledVersion: number;
+  snapshotVersion: number;
 }
 
 export class ProjectRepository {
   private readonly sessions = new Map<string, Session>();
   private resolvedSessionRoot: string | null = null;
-  constructor(private readonly sessionRoot: string) {}
+  private pending: Promise<unknown> = Promise.resolve();
+  private readonly recovery: RecoveryStore;
+  constructor(
+    private readonly sessionRoot: string,
+    recoveryRoot = path.join(path.dirname(sessionRoot), 'recoveries'),
+  ) {
+    this.recovery = new RecoveryStore(recoveryRoot);
+  }
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.pending.then(operation);
+    this.pending = next.catch(() => undefined);
+    return next;
+  }
+  create(input: unknown) {
+    return this.enqueue(() => this.createNow(input));
+  }
+  open(file: string) {
+    return this.enqueue(() => this.openNow(file));
+  }
+  importAudio(handle: string, sourceFile: string) {
+    return this.enqueue(() => this.importAudioNow(handle, sourceFile));
+  }
+  importImage(
+    handle: string,
+    sourceFile: string,
+    tileSize: number,
+    execute: (request: ImageWorkerRequest) => Promise<ImageImport>,
+  ) {
+    return this.enqueue(() => this.importImageNow(handle, sourceFile, tileSize, execute));
+  }
+  discardImport(handle: string, assetId: string) {
+    return this.enqueue(() => this.discardImportNow(handle, assetId));
+  }
+  save(handle: string, input: unknown, file: string, version = 0) {
+    return this.enqueue(() => this.saveNow(handle, input, file, version));
+  }
+  close(handle: string) {
+    return this.enqueue(() => this.closeNow(handle));
+  }
+  closeAll() {
+    return this.enqueue(async () => {
+      for (const handle of this.sessions.keys()) await this.closeNow(handle);
+    });
+  }
+  listRecoveries() {
+    return this.enqueue(() => this.recovery.list());
+  }
+  cleanupAbandonedSessions() {
+    return this.enqueue(async () => {
+      await fs.mkdir(this.sessionRoot, { recursive: true });
+      const root = await fs.realpath(this.sessionRoot);
+      for (const item of await fs.readdir(root, { withFileTypes: true })) {
+        if (
+          !item.isDirectory() ||
+          !z.uuid().safeParse(item.name).success ||
+          this.sessions.has(item.name)
+        )
+          continue;
+        const target = path.join(root, item.name);
+        await checkRealPath(root, target);
+        await fs.rm(target, { recursive: true, force: true });
+      }
+    });
+  }
+  snapshot(handle: string, input: unknown, version: number): Promise<RecoveryEntry | null> {
+    return this.enqueue(async () => {
+      const session = this.get(handle);
+      if (version <= session.settledVersion || version <= session.snapshotVersion) return null;
+      const project = validateProject(input);
+      const entry = await this.recovery.write(
+        {
+          id: session.recoveryId,
+          name: project.name,
+          filePath: session.filePath,
+          version,
+        },
+        async (file) => {
+          await this.writeProject(session, project, file);
+        },
+      );
+      session.snapshotVersion = version;
+      return entry;
+    });
+  }
+  restoreRecovery(id: string, token: string): Promise<ProjectSession> {
+    return this.enqueue(async () => {
+      if ([...this.sessions.values()].some((session) => session.recoveryId === id))
+        throw Error('该恢复工程已在当前窗口打开');
+      const { entry, project, file } = await this.recovery.load(id, token);
+      const session = await this.session(project, file);
+      try {
+        // The restored editor owns a fresh copy, so discarding an old snapshot cannot
+        // invalidate live reads, undo, or a subsequent formal save.
+        const sources = await this.writeProject(
+          session,
+          project,
+          path.join(session.staging, 'project.rcproj'),
+        );
+        session.sources = sources;
+        session.filePath = entry.filePath;
+        session.recoveryId = id;
+        session.snapshotVersion = entry.version;
+        return {
+          handle: session.handle,
+          project,
+          filePath: entry.filePath,
+          warnings: [],
+          recovery: entry,
+        };
+      } catch (error) {
+        await this.closeNow(session.handle);
+        throw error;
+      }
+    });
+  }
+  discardRecovery(id: string, token: string): Promise<void> {
+    return this.enqueue(async () => {
+      if ([...this.sessions.values()].some((session) => session.recoveryId === id))
+        throw Error('请在当前工程中保存或放弃修改');
+      await this.recovery.discard(id, token);
+    });
+  }
+  discardSessionRecovery(handle: string, version: number): Promise<void> {
+    return this.enqueue(async () => {
+      const session = this.get(handle);
+      await this.recovery.discardThrough(session.recoveryId, version);
+      session.settledVersion = Math.max(session.settledVersion, version);
+    });
+  }
+
   private get(handle: string): Session {
     const session = this.sessions.get(handle);
     if (!session) throw new Error('工程会话已关闭，请重新打开工程');
@@ -124,6 +189,9 @@ export class ProjectRepository {
       filePath,
       staging,
       sources: new Map(),
+      recoveryId: handle,
+      settledVersion: -1,
+      snapshotVersion: -1,
     };
     if (filePath) {
       const root = path.dirname(filePath);
@@ -138,13 +206,13 @@ export class ProjectRepository {
     this.sessions.set(handle, session);
     return session;
   }
-  async create(input: unknown): Promise<ProjectSession> {
+  private async createNow(input: unknown): Promise<ProjectSession> {
     const project = validateProject(input);
     if (Object.keys(project.assets).length) throw new Error('新工程不能引用未经导入的本地素材');
     const session = await this.session(project, null);
     return { handle: session.handle, project, filePath: null, warnings: [] };
   }
-  async open(file: string): Promise<ProjectSession> {
+  private async openNow(file: string): Promise<ProjectSession> {
     const project = validateProject(JSON.parse(await fs.readFile(file, 'utf8')));
     const session = await this.session(project, path.resolve(file));
     const warnings: string[] = [];
@@ -162,7 +230,7 @@ export class ProjectRepository {
       warnings: warnings.filter(Boolean),
     };
   }
-  async importAudio(handle: string, sourceFile: string): Promise<Asset> {
+  private async importAudioNow(handle: string, sourceFile: string): Promise<Asset> {
     const session = this.get(handle);
     const extension = path.extname(sourceFile).toLowerCase();
     if (!['.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac', '.opus', '.webm'].includes(extension))
@@ -222,7 +290,7 @@ export class ProjectRepository {
       throw error;
     }
   }
-  async importImage(
+  private async importImageNow(
     handle: string,
     sourceFile: string,
     tileSize: number,
@@ -265,7 +333,7 @@ export class ProjectRepository {
       throw error;
     }
   }
-  async discardImport(handle: string, assetId: string): Promise<void> {
+  private async discardImportNow(handle: string, assetId: string): Promise<void> {
     const session = this.get(handle);
     const source = session.sources.get(assetId);
     if (!source?.staged) return;
@@ -273,17 +341,32 @@ export class ProjectRepository {
     await fs.unlink(source.file);
     session.sources.delete(assetId);
   }
-  async save(
+  private async saveNow(
     handle: string,
     input: unknown,
     file: string,
-  ): Promise<{ filePath: string; savedRevision: number }> {
-    const session = this.get(handle);
-    const project = validateProject(input);
+    version: number,
+  ): Promise<SaveResult> {
+    const session = this.get(handle),
+      project = validateProject(input);
     if (project.id !== session.projectId) throw new Error('工程会话与文档不匹配');
     if (path.extname(file).toLowerCase() !== '.rcproj')
       throw new Error('请使用 .rcproj 扩展名保存工程');
     const target = path.resolve(file);
+    const nextSources = await this.writeProject(session, project, target, true);
+    session.filePath = target;
+    for (const [id, source] of nextSources) session.sources.set(id, source);
+    session.settledVersion = Math.max(session.settledVersion, version);
+    let warning: string | undefined;
+    try {
+      await this.recovery.discardThrough(session.recoveryId, version);
+    } catch {
+      warning = '工程已保存，但旧恢复快照未能清理；原恢复数据已保留';
+    }
+    return { filePath: target, savedRevision: project.revision, warning };
+  }
+  private async writeProject(session: Session, project: Project, target: string, backup = false) {
+    if (project.id !== session.projectId) throw new Error('工程会话与文档不匹配');
     const root = path.dirname(target);
     await fs.mkdir(root, { recursive: true });
     const nextSources = new Map<string, AssetLocation>();
@@ -319,6 +402,17 @@ export class ProjectRepository {
           const temp = destination + '.' + randomUUID() + '.tmp';
           try {
             await fs.copyFile(source.file, temp);
+            if (
+              (await fs.stat(temp)).size !== asset.byteLength ||
+              (await hashFile(temp)) !== asset.sha256
+            )
+              throw new Error(`素材复制校验失败：${asset.originalName}`);
+            const copied = await fs.open(temp, 'r+');
+            try {
+              await copied.sync();
+            } finally {
+              await copied.close();
+            }
             await fs.rename(temp, destination);
           } finally {
             await fs.unlink(temp).catch(() => undefined);
@@ -328,15 +422,13 @@ export class ProjectRepository {
       nextSources.set(asset.id, { asset, file: destination, root, staged: false });
     });
     // Commit the manifest only after every asset is present. Failed saves retain the last valid manifest.
-    await atomicWrite(target, serializeProject(project));
-    session.filePath = target;
-    for (const [id, source] of nextSources) session.sources.set(id, source);
-    return { filePath: target, savedRevision: project.revision };
+    await atomicWrite(target, serializeProject(project), backup);
+    return nextSources;
   }
   filePath(handle: string): string | null {
     return this.get(handle).filePath;
   }
-  async close(handle: string): Promise<void> {
+  private async closeNow(handle: string): Promise<void> {
     const session = this.sessions.get(handle);
     if (!session) return;
     const root = this.resolvedSessionRoot ?? path.resolve(this.sessionRoot);
@@ -346,8 +438,5 @@ export class ProjectRepository {
     await checkRealPath(root, target);
     await fs.rm(target, { recursive: true, force: true });
     this.sessions.delete(handle);
-  }
-  async closeAll(): Promise<void> {
-    for (const handle of this.sessions.keys()) await this.close(handle);
   }
 }

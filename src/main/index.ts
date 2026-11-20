@@ -34,8 +34,10 @@ let window: BrowserWindow | null = null;
 let repository: ProjectRepository;
 let dirty = false;
 let closing = false;
+let activeVersion = 0;
 let activeHandle: string | null = null;
 let cancelImport: (() => void) | null = null;
+let cancelQueuedImport: (() => void) | null = null;
 let importJob: Promise<ImageImport> | null = null;
 
 function runImageWorker(request: ImageWorkerRequest, projectHandle: string): Promise<ImageImport> {
@@ -120,8 +122,48 @@ function handle<S extends z.ZodType, T>(
 }
 
 function setupIPC(): void {
-  const id = z.uuid();
+  const id = z.uuid(),
+    version = z.number().int().nonnegative();
+  const recoveryKey = z.object({ id, token: id }).strict();
+  handle(
+    channels.snapshot,
+    z.object({ handle: id, project: z.unknown(), version }).strict(),
+    (request) => repository.snapshot(request.handle, request.project, request.version),
+  );
+  handle(channels.listRecoveries, z.undefined(), () => repository.listRecoveries());
+  handle(channels.restoreRecovery, recoveryKey, async (request) => {
+    const result = await repository.restoreRecovery(request.id, request.token);
+    return result;
+  });
+  handle(channels.discardRecovery, recoveryKey, (request) =>
+    repository.discardRecovery(request.id, request.token),
+  );
+  handle(
+    channels.discardSessionRecovery,
+    z.object({ handle: id, version }).strict(),
+    async (request) => {
+      await repository.discardSessionRecovery(request.handle, request.version);
+      if (activeHandle === request.handle && activeVersion === request.version) dirty = false;
+    },
+  );
+  handle(
+    channels.finishClose,
+    z.object({ handle: id.nullable(), version }).strict(),
+    async (request) => {
+      if (activeHandle !== request.handle || activeVersion !== request.version || dirty)
+        throw Error('工程已变化，请重新确认退出');
+      closing = true;
+      cancelImport?.();
+      await importJob?.catch(() => undefined);
+      await repository
+        .closeAll()
+        .catch((error) => console.error('Temporary resource cleanup:', error));
+      // Reply before destroying the renderer that requested this close.
+      setImmediate(() => window?.destroy());
+    },
+  );
   handle(channels.cancelImageImport, z.undefined(), () => {
+    cancelQueuedImport?.();
     cancelImport?.();
   });
   handle(
@@ -134,24 +176,30 @@ function setupIPC(): void {
         filters: [{ name: '插画素材', extensions: ['psd', 'png'] }],
       });
       if (selected.canceled || !selected.filePaths[0]) return null;
+      let cancelled = false;
+      cancelQueuedImport = () => {
+        cancelled = true;
+      };
       const task = repository.importImage(
         request.handle,
         selected.filePaths[0],
         request.tileSize,
-        (input) => runImageWorker(input, request.handle),
+        (input) =>
+          cancelled
+            ? Promise.reject(new Error('已取消图片导入，原工程未改变'))
+            : runImageWorker(input, request.handle),
       );
       importJob = task;
       try {
         return await task;
       } finally {
         if (importJob === task) importJob = null;
+        cancelQueuedImport = null;
       }
     },
   );
   handle(channels.newProject, z.unknown(), async (project) => {
     const result = await repository.create(project);
-    activeHandle = result.handle;
-    dirty = false;
     return result;
   });
   handle(channels.openProject, z.undefined(), async () => {
@@ -162,8 +210,6 @@ function setupIPC(): void {
     });
     if (selected.canceled || !selected.filePaths[0]) return null;
     const result = await repository.open(selected.filePaths[0]);
-    activeHandle = result.handle;
-    dirty = false;
     return result;
   });
   handle(
@@ -173,6 +219,7 @@ function setupIPC(): void {
         handle: id,
         project: projectSchema.pick({ name: true }).passthrough(),
         saveAs: z.boolean(),
+        version,
       })
       .strict(),
     async (request) => {
@@ -186,8 +233,8 @@ function setupIPC(): void {
         if (selected.canceled || !selected.filePath) return null;
         file = selected.filePath;
       }
-      const result = await repository.save(request.handle, request.project, file);
-      dirty = false;
+      const result = await repository.save(request.handle, request.project, file, request.version);
+      if (activeHandle === request.handle && activeVersion === request.version) dirty = false;
       return result;
     },
   );
@@ -221,9 +268,26 @@ function setupIPC(): void {
     repository.discardImport(request.handle, request.assetId),
   );
   handle(channels.closeSession, id, (projectHandle) => repository.close(projectHandle));
-  handle(channels.setDirty, z.object({ handle: id, dirty: z.boolean() }).strict(), (request) => {
-    if (request.handle === activeHandle) dirty = request.dirty;
-  });
+  handle(
+    channels.activateSession,
+    z.object({ handle: id, dirty: z.boolean(), version }).strict(),
+    (request) => {
+      repository.filePath(request.handle);
+      activeHandle = request.handle;
+      activeVersion = request.version;
+      dirty = request.dirty;
+    },
+  );
+  handle(
+    channels.setDirty,
+    z.object({ handle: id, dirty: z.boolean(), version }).strict(),
+    (request) => {
+      if (request.handle === activeHandle && request.version >= activeVersion) {
+        dirty = request.dirty;
+        activeVersion = request.version;
+      }
+    },
+  );
   handle(channels.processSample, z.undefined(), () => ({
     sampledAt: new Date().toISOString(),
     processes: app.getAppMetrics().map((metric) => ({
@@ -298,27 +362,7 @@ function createWindow(): void {
   window.on('close', (event) => {
     if (closing) return;
     event.preventDefault();
-    void (async () => {
-      if (dirty) {
-        const response = await dialog.showMessageBox(window!, {
-          type: 'question',
-          title: '工程尚未保存',
-          message: '工程有未保存的修改',
-          detail: '选择“返回保存”后，可在顶部工具栏保存工程。',
-          buttons: ['返回保存', '不保存并退出'],
-          defaultId: 0,
-          cancelId: 0,
-        });
-        if (response.response !== 1) return;
-      }
-      closing = true;
-      cancelImport?.();
-      await importJob?.catch(() => undefined);
-      await repository
-        .closeAll()
-        .catch((error) => console.error('Temporary resource cleanup:', error));
-      window?.destroy();
-    })();
+    window?.webContents.send(channels.closeRequested);
   });
   window.on('closed', () => {
     window = null;
@@ -326,11 +370,23 @@ function createWindow(): void {
   if (isDev) void window.loadURL(devUrl!);
   else void window.loadURL('rhythm://app/index.html');
 }
+// A profile has one writer for recovery pointers and temporary session cleanup.
+const ownsProfile = app.requestSingleInstanceLock();
+if (!ownsProfile) app.quit();
+app.on('second-instance', () => {
+  if (window?.isMinimized()) window.restore();
+  window?.show();
+  window?.focus();
+});
 // Register readiness without blocking evaluation of the ESM entry module.
 void app
   .whenReady()
-  .then(() => {
+  .then(async () => {
+    if (!ownsProfile) return;
     initializeDesktop();
+    await repository
+      .cleanupAbandonedSessions()
+      .catch((error) => console.error('Abandoned session cleanup:', error));
     setupIPC();
     createWindow();
   })

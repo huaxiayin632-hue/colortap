@@ -466,11 +466,17 @@ export function applyCommand(
 export class EditHistory {
   private past: Project[] = [];
   private future: Project[] = [];
-  private saved: Project;
+  private saved: Project | null;
   private previewBase: Project | null = null;
-  constructor(public current: Project) {
+  constructor(
+    public current: Project,
+    recovered = false,
+  ) {
     validateProject(current);
-    this.saved = current;
+    this.saved = recovered ? null : current;
+  }
+  get committed(): Project {
+    return this.previewBase ?? this.current;
   }
   get canUndo(): boolean {
     return this.past.length > 0;
@@ -517,8 +523,7 @@ export class EditHistory {
       this.current = next;
     }
   }
-  markSaved(): void {
-    this.cancelPreview();
-    this.saved = this.current;
+  markSaved(project = this.committed): void {
+    this.saved = project;
   }
 }
