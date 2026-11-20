@@ -14,6 +14,7 @@ export class TileTextureCache {
   private entries = new Map<string, Cached>();
   private pending = new Set<string>();
   private wanted = new Set<string>();
+  private retained = new Set<string>();
   private queue: { asset: Asset; frame: Rect }[] = [];
   private active = 0;
   private clock = 0;
@@ -33,7 +34,12 @@ export class TileTextureCache {
     if (entry) entry.used = ++this.clock;
     return entry?.texture;
   }
-  request(tiles: { asset: Asset; frame: Rect }[]): void {
+  hasFailed(id: string): boolean {
+    return this.failures.has(id);
+  }
+  request(tiles: { asset: Asset; frame: Rect }[], retained: string[] = []): void {
+    this.retained = new Set(retained);
+    tiles = [...new Map(tiles.map((t) => [t.asset.id, t])).values()];
     this.wanted = new Set(tiles.map((t) => t.asset.id));
     this.queue = tiles.filter(
       (t) =>
@@ -51,7 +57,7 @@ export class TileTextureCache {
   }
   private trim(incoming = 0): void {
     const candidates = [...this.entries]
-      .filter(([id]) => !this.wanted.has(id))
+      .filter(([id]) => !this.wanted.has(id) && !this.retained.has(id))
       .sort((a, b) => a[1].used - b[1].used);
     let bytes = this.bytes;
     for (const [id, entry] of candidates) {
@@ -73,6 +79,7 @@ export class TileTextureCache {
         this.active--;
         this.pending.delete(id);
         this.pump();
+        if (this.live) this.changed();
       });
     }
   }
@@ -124,6 +131,7 @@ export class TileTextureCache {
       decodedImageBytesEstimate: this.bytes,
       peakRgbaBytesEstimate: this.peakBytes,
       budgetBytes: this.budgetBytes,
+      retainedTextures: this.retained.size,
       loading: this.active,
       queued: this.queue.length,
       loaded: this.loaded,

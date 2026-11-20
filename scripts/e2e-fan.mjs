@@ -294,39 +294,22 @@ async function progress(value) {
   await settle();
 }
 async function sample(points) {
-  return page.evaluate(
-    (points) =>
-      new Promise((resolve) =>
-        requestAnimationFrame(() => {
-          const host = document.querySelector('[data-testid=canvas-host]'),
-            src = document.querySelector('[data-testid=pixi-canvas]'),
-            target = document.createElement('canvas');
-          target.width = target.height = 1;
-          const ctx = target.getContext('2d'),
-            ratio = src.width / src.clientWidth,
-            zoom = Number(host.dataset.zoom);
-          resolve(
-            points.map((p) => {
-              ctx.clearRect(0, 0, 1, 1);
-              ctx.drawImage(
-                src,
-                (Number(host.dataset.panX) + p.x * zoom) * ratio,
-                (Number(host.dataset.panY) + p.y * zoom) * ratio,
-                1,
-                1,
-                0,
-                0,
-                1,
-                1,
-              );
-              return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
-            }),
-          );
-        }),
-      ),
-    points,
-  );
+  // Read the displayed canvas: an idle WebGL drawing buffer need not retain its pixels.
+  const canvas = page.getByTestId('pixi-canvas'),
+    box = await canvas.boundingBox(),
+    png = PNG.sync.read(await canvas.screenshot());
+  const view = await page.getByTestId('canvas-host').evaluate((el) => ({
+    zoom: Number(el.dataset.zoom),
+    x: Number(el.dataset.panX),
+    y: Number(el.dataset.panY),
+  }));
+  return points.map((p) => {
+    const x = Math.round(((view.x + p.x * view.zoom) * png.width) / box.width),
+      y = Math.round(((view.y + p.y * view.zoom) * png.height) / box.height);
+    return [...png.data.subarray((y * png.width + x) * 4, (y * png.width + x) * 4 + 3)];
+  });
 }
+
 const points = [
   { x: 350, y: 350 },
   { x: 650, y: 350 },
@@ -485,5 +468,6 @@ try {
   assert.deepEqual(report.errors, []);
 } finally {
   await fs.writeFile(path.join(results, 'report.json'), JSON.stringify(report, null, 2));
+  await app?.evaluate(({ app }) => app.exit(0)).catch(() => {});
   await app?.close();
 }
