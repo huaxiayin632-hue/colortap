@@ -14,8 +14,8 @@ import { evaluateNumberInput, formatNumber } from '../../core/number-input';
 
 defineOptions({ inheritAttrs: false });
 const props = withDefaults(
-  defineProps<{ value: string | number; precision?: number; type?: string }>(),
-  { precision: 3 },
+  defineProps<{ value: string | number; precision?: number; type?: string; live?: boolean }>(),
+  { precision: 3, live: true },
 );
 const emit = defineEmits<{ commit: [value: string]; focus: [] }>();
 const attrs = useAttrs();
@@ -28,6 +28,14 @@ const displayValue = computed(() => {
   const numeric = Number(text);
   return text.trim() && Number.isFinite(numeric) ? formatNumber(numeric, props.precision) : text;
 });
+const scrubDisplayValue = ref<number | null>(null);
+const inputValue = computed(() =>
+  scrubbing.value && !props.live && scrubDisplayValue.value !== null
+    ? formatNumber(scrubDisplayValue.value, props.precision)
+    : focused.value
+      ? draft.value
+      : displayValue.value,
+);
 let edited = false;
 let pointerId: number | null = null;
 let startX = 0;
@@ -154,8 +162,9 @@ function finishScrub(commit: boolean): void {
     input.releasePointerCapture(activePointer);
   if (scrubbing.value) {
     scrubbing.value = false;
+    scrubDisplayValue.value = null;
     window.removeEventListener('keydown', escapeScrub, { capture: true });
-    gesture?.end(commit);
+    if (props.live) gesture?.end(commit);
   }
 }
 
@@ -183,6 +192,7 @@ function pointerdown(event: PointerEvent): void {
   latestValue = current;
   lastEmitted = current;
   scrubbing.value = false;
+  scrubDisplayValue.value = null;
   finishAfterFrame = false;
   input.setPointerCapture(event.pointerId);
 }
@@ -193,10 +203,14 @@ function pointermove(event: PointerEvent): void {
   if (!scrubbing.value && Math.abs(delta) > 3) {
     scrubbing.value = true;
     window.addEventListener('keydown', escapeScrub, { capture: true });
-    gesture?.begin();
+    if (props.live) gesture?.begin();
   }
   if (!scrubbing.value) return;
   latestValue = scrubValue(event);
+  if (!props.live) {
+    scrubDisplayValue.value = latestValue;
+    return;
+  }
   if (gesture) queuePreview();
 }
 
@@ -210,7 +224,10 @@ function pointerup(event: PointerEvent): void {
   }
   latestValue = scrubValue(event);
   pointerId = null;
-  if (!gesture) {
+  if (!props.live) {
+    if (latestValue !== startValue) emit('commit', String(latestValue));
+    finishScrub(true);
+  } else if (!gesture) {
     emitPreview();
     finishScrub(true);
   } else if (animationFrame || latestValue !== lastEmitted) {
@@ -245,7 +262,7 @@ onBeforeUnmount(() => {
     type="text"
     inputmode="decimal"
     v-bind="$attrs"
-    :value="focused ? draft : displayValue"
+    :value="inputValue"
     @input="input"
     @focus="focus"
     @change="commitText"

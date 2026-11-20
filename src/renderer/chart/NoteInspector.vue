@@ -407,6 +407,7 @@ function nodeMode(value: string): void {
           aria-label="批量时间偏移"
           type="number"
           :precision="6"
+          :live="false"
           step="0.125"
           :disabled="disabled"
           :value="0"

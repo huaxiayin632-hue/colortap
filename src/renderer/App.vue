@@ -588,6 +588,7 @@ onBeforeUnmount(() => {
                 aria-label="定位到秒"
                 type="number"
                 :precision="6"
+                :live="false"
                 min="0"
                 step="0.1"
                 :max="editor.playback.value.durationUs / 1000000"
