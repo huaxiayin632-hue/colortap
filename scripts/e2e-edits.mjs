@@ -160,6 +160,17 @@ try {
   });
   await page.getByTestId('pixi-canvas').waitFor();
   await settled();
+  await check('数值框箭头步进保留有效输入草稿', async () => {
+    const field = page.getByLabel('BPM', { exact: true });
+    const original = Number(await field.inputValue());
+    await field.fill('150');
+    await field.press('ArrowUp');
+    await settled();
+    assert.equal(Number(await field.inputValue()), 151);
+    await history();
+    assert.equal(Number(await field.inputValue()), original);
+    return { original, typed: 150, stepped: 151 };
+  });
   await check('真实 PSD 初始位置和半透明嵌套组渲染', async () => {
     await importPicture(fixtures.psd);
     assert.equal(await page.getByRole('treeitem').count(), 6);

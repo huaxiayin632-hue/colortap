@@ -111,9 +111,11 @@ function stepValue(): number {
 function changeByStep(amount: number): void {
   const current = Number(props.value);
   if (Number.isFinite(current)) {
+    const draftValue = focused.value && edited ? evaluateNumberInput(draft.value, current) : null;
+    const base = draftValue ?? current;
     minimum = attributeNumber('min', -Infinity);
     maximum = attributeNumber('max', Infinity);
-    commitValue(current + amount);
+    commitValue(base + amount);
   }
 }
 
