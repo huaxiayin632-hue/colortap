@@ -154,7 +154,7 @@ function finishScrub(commit: boolean): void {
     input.releasePointerCapture(activePointer);
   if (scrubbing.value) {
     scrubbing.value = false;
-    window.removeEventListener('keydown', escapeScrub);
+    window.removeEventListener('keydown', escapeScrub, { capture: true });
     gesture?.end(commit);
   }
 }
@@ -192,7 +192,7 @@ function pointermove(event: PointerEvent): void {
   const delta = event.clientX - startX;
   if (!scrubbing.value && Math.abs(delta) > 3) {
     scrubbing.value = true;
-    window.addEventListener('keydown', escapeScrub);
+    window.addEventListener('keydown', escapeScrub, { capture: true });
     gesture?.begin();
   }
   if (!scrubbing.value) return;
@@ -226,13 +226,14 @@ function cancelScrub(event: PointerEvent): void {
 
 function escapeScrub(event: KeyboardEvent): void {
   if (event.key !== 'Escape' || !scrubbing.value) return;
+  event.stopImmediatePropagation();
   event.preventDefault();
   finishScrub(false);
 }
 
 onBeforeUnmount(() => {
   if (pointerId !== null || scrubbing.value) finishScrub(false);
-  window.removeEventListener('keydown', escapeScrub);
+  window.removeEventListener('keydown', escapeScrub, { capture: true });
 });
 </script>
 
