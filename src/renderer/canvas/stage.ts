@@ -1,6 +1,9 @@
 // Pixi's static uniform adapters support the strict CSP without enabling string evaluation.
 import 'pixi.js/unsafe-eval';
 import './alpha-mask-pipe';
+import { watch, type WatchStopHandle } from 'vue';
+import { equalData } from '../../core/project';
+import { RenderRequest } from '../../core/render-request';
 import { Application, Container, Graphics, Matrix, type WebGLRenderer } from 'pixi.js';
 import { Viewport } from '../../core/viewport';
 import type { RenderCapabilities } from '../../core/tiles';
@@ -28,11 +31,20 @@ export class EditorStage {
   private camera: CameraController | null = null;
   private cameraTransform: Affine = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 };
   private cameraDrag = false;
-  private cameraReconcile = 0;
-  private cameraDirty = false;
+
   private readonly artworkClip = new Graphics();
   private readonly bounds = new Graphics();
   private readonly renderFrames = new FrameRecorder();
+  private readonly rendering = new RenderRequest((timestamp) => this.render(timestamp));
+  private readonly watchers: WatchStopHandle[] = [];
+  private renderCount = 0;
+  private lastRender = 0;
+  private gpu: {
+    vendor: string;
+    renderer: string;
+    unmaskedVendor: string | null;
+    unmaskedRenderer: string | null;
+  } | null = null;
   private scene: LayerScene | null = null;
   private chartScene: ChartScene | null = null;
   private chartDrag = false;
@@ -57,6 +69,8 @@ export class EditorStage {
   async initialize(): Promise<void> {
     await this.app.init({
       preference: 'webgl',
+      autoStart: false,
+      sharedTicker: false,
       useBackBuffer: true,
       antialias: true,
       background: 0x202226,
@@ -70,52 +84,6 @@ export class EditorStage {
       return;
     }
     this.initialized = true;
-    this.app.ticker.add(() => {
-      if (document.hidden) this.renderFrames.resume();
-      else this.renderFrames.frame(performance.now());
-      this.grid.visible = this.chartScene?.chart.mode.value === 'edit';
-      if (this.camera) {
-        const m = cameraMatrix(this.camera.document.value, this.camera.pose.value);
-        if (
-          (Object.keys(m) as (keyof Affine)[]).some(
-            (k) => Math.abs(m[k] - this.cameraTransform[k]) > 1e-8,
-          )
-        ) {
-          this.cameraTransform = m;
-          this.cameraDirty = true;
-          this.illustration.setFromMatrix(new Matrix(m.a, m.b, m.c, m.d, m.tx, m.ty));
-        }
-        if (this.cameraDirty && performance.now() - this.cameraReconcile > 50) {
-          this.scene?.update();
-          this.cameraReconcile = performance.now();
-          this.cameraDirty = false;
-        }
-        this.cameraFrame.visible =
-          this.camera.showFrame.value && this.chartScene?.chart.mode.value === 'edit';
-        if (this.cameraFrame.visible) {
-          const unit = 1 / this.viewport.zoom,
-            p = this.camera.pose.value.pivot ?? { x: this.size.width / 2, y: this.size.height / 2 },
-            q = point(m, p);
-          this.cameraFrame
-            .clear()
-            .rect(0, 0, this.size.width, this.size.height)
-            .stroke({ color: 0xe9b76f, width: unit * 1.5, alpha: 0.7 });
-          if (this.camera.tool.value !== 'none')
-            this.cameraFrame
-              .moveTo(q.x - 8 * unit, q.y)
-              .lineTo(q.x + 8 * unit, q.y)
-              .moveTo(q.x, q.y - 8 * unit)
-              .lineTo(q.x, q.y + 8 * unit)
-              .stroke({ color: 0xe9b76f, width: unit * 2 });
-        }
-      }
-      this.chartScene?.draw();
-      this.scene?.animate(this.reveals?.states.value ?? {});
-      if (this.reveals)
-        this.outlineScene?.draw(this.reveals.states.value, this.reveals.document.value);
-      if (this.scene) this.scene.selection.visible = this.chartScene?.chart.mode.value === 'edit';
-      this.revealScene?.draw();
-    });
     const canvas = this.app.canvas;
     canvas.tabIndex = 0;
     canvas.setAttribute('aria-label', 'PixiJS 编辑画布，空白或中键拖动平移，滚轮缩放');
@@ -123,6 +91,13 @@ export class EditorStage {
     this.host.append(canvas);
     const gl = (this.app.renderer as WebGLRenderer).gl;
     const viewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS) as Int32Array;
+    const debug = gl.getExtension('WEBGL_debug_renderer_info');
+    this.gpu = {
+      vendor: gl.getParameter(gl.VENDOR),
+      renderer: gl.getParameter(gl.RENDERER),
+      unmaskedVendor: debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : null,
+      unmaskedRenderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : null,
+    };
     this.capabilities = {
       maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
       maxRenderbufferSize: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
@@ -147,6 +122,69 @@ export class EditorStage {
     this.resize();
     this.fit();
   }
+  private render(timestamp: number): void {
+    if (
+      !this.initialized ||
+      this.disposed ||
+      (this.app.renderer as WebGLRenderer).gl.isContextLost()
+    )
+      return;
+    if (timestamp - this.lastRender > 250) this.renderFrames.resume();
+    this.lastRender = timestamp;
+    if (document.hidden) this.renderFrames.resume();
+    else this.renderFrames.frame(performance.now());
+    this.grid.visible = this.chartScene?.chart.mode.value === 'edit';
+    if (this.camera) {
+      const m = cameraMatrix(this.camera.document.value, this.camera.pose.value);
+      if (
+        (Object.keys(m) as (keyof Affine)[]).some(
+          (k) => Math.abs(m[k] - this.cameraTransform[k]) > 1e-8,
+        )
+      ) {
+        this.cameraTransform = m;
+        this.scene?.update();
+        this.illustration.setFromMatrix(new Matrix(m.a, m.b, m.c, m.d, m.tx, m.ty));
+      }
+      this.cameraFrame.visible =
+        this.camera.showFrame.value && this.chartScene?.chart.mode.value === 'edit';
+      if (this.cameraFrame.visible) {
+        const unit = 1 / this.viewport.zoom,
+          p = this.camera.pose.value.pivot ?? { x: this.size.width / 2, y: this.size.height / 2 },
+          q = point(m, p);
+        this.cameraFrame
+          .clear()
+          .rect(0, 0, this.size.width, this.size.height)
+          .stroke({ color: 0xe9b76f, width: unit * 1.5, alpha: 0.7 });
+        if (this.camera.tool.value !== 'none')
+          this.cameraFrame
+            .moveTo(q.x - 8 * unit, q.y)
+            .lineTo(q.x + 8 * unit, q.y)
+            .moveTo(q.x, q.y - 8 * unit)
+            .lineTo(q.x, q.y + 8 * unit)
+            .stroke({ color: 0xe9b76f, width: unit * 2 });
+      }
+    }
+    this.chartScene?.draw();
+    this.scene?.animate(this.reveals?.states.value ?? {});
+    if (this.reveals)
+      this.outlineScene?.draw(this.reveals.states.value, this.reveals.document.value);
+    if (this.scene) this.scene.selection.visible = this.chartScene?.chart.mode.value === 'edit';
+    this.revealScene?.draw();
+    this.scene?.flush();
+    this.app.render();
+    this.host.dataset.renderCount = String(++this.renderCount);
+  }
+  invalidate = (): void => {
+    this.rendering.request();
+  };
+  private observe(sources: Parameters<typeof watch>[0]): void {
+    this.watchers.push(
+      watch(sources, (next, previous) => {
+        if (!equalData(next, previous)) this.invalidate();
+      }),
+    );
+  }
+
   private contextLost = (event: Event): void => {
     event.preventDefault();
     this.onContextLost?.();
@@ -340,6 +378,7 @@ export class EditorStage {
           this.host.dataset.textures = String(stats?.residentTextures ?? 0);
           this.host.dataset.loading = String((stats?.loading ?? 0) + (stats?.queued ?? 0));
           this.onChange?.();
+          this.invalidate();
         },
         (error) => this.onAssetError?.(error),
         () => this.cameraTransform,
@@ -351,15 +390,31 @@ export class EditorStage {
     }
     this.scene.setProject(project);
     this.scene.select(this.selected);
+    this.invalidate();
   }
   select(id: string | null): void {
     this.selected = id;
     this.scene?.select(id);
+    this.invalidate();
   }
   setChart(chart: ChartController): void {
     this.chartScene?.dispose();
     this.chartScene = new ChartScene(chart, () => this.viewport.zoom);
     this.artwork.addChild(this.chartScene.root);
+    this.observe([
+      chart.document,
+      chart.mode,
+      chart.tool,
+      chart.timeUs,
+      chart.selected,
+      chart.nodeId,
+      chart.runtime,
+      chart.pointer,
+      chart.selectionBox,
+      chart.sliderDraft,
+      chart.sliderCursor,
+    ]);
+    this.invalidate();
   }
   setReveals(reveals: RevealController): void {
     this.reveals = reveals;
@@ -368,9 +423,22 @@ export class EditorStage {
     this.outlineScene = new OutlineScene();
     this.revealScene = new RevealPathScene(reveals, () => this.viewport.zoom);
     this.illustration.addChild(this.outlineScene.root, this.revealScene.root);
+    this.observe([
+      reveals.document,
+      reveals.states,
+      reveals.pathEditing,
+      reveals.nodeId,
+      reveals.drawing,
+      reveals.draftPoints,
+      reveals.hover,
+      reveals.selectedId,
+    ]);
+    this.invalidate();
   }
   setCamera(camera: CameraController): void {
     this.camera = camera;
+    this.observe([camera.document, camera.pose, camera.showFrame, camera.tool]);
+    this.invalidate();
   }
   fit(): void {
     this.viewport.fit(this.size);
@@ -419,10 +487,13 @@ export class EditorStage {
     this.host.dataset.panY = String(pan.y);
     this.scene?.update();
     this.onChange?.();
+    this.invalidate();
   }
   metrics() {
     return {
       capabilities: this.capabilities,
+      gpu: this.gpu,
+      rendering: { frames: this.renderCount, pending: this.rendering.pending, mode: 'on-demand' },
       previewFrames: this.renderFrames.snapshot(),
       layers: this.scene?.stats() ?? null,
       chart: this.chartScene?.metrics() ?? null,
@@ -462,6 +533,8 @@ export class EditorStage {
   }
   dispose(): void {
     this.disposed = true;
+    this.rendering.dispose();
+    this.watchers.forEach((stop) => stop());
     this.observer?.disconnect();
     if (this.initialized) {
       const canvas = this.app.canvas;

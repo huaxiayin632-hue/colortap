@@ -792,6 +792,16 @@ onBeforeUnmount(() => {
             <dd>{{ stageMetrics?.capabilities?.maxTextureSize ?? '未采集' }}</dd>
           </div>
           <div>
+            <dt>实际图形设备</dt>
+            <dd>
+              {{ stageMetrics?.gpu?.unmaskedRenderer ?? stageMetrics?.gpu?.renderer ?? '未采集' }}
+            </dd>
+          </div>
+          <div>
+            <dt>实际绘制帧数</dt>
+            <dd>{{ stageMetrics?.rendering?.frames ?? 0 }}</dd>
+          </div>
+          <div>
             <dt>受管纹理 / RGBA 估算</dt>
             <dd>
               {{ stageMetrics?.layers?.residentTextures ?? 0 }} /

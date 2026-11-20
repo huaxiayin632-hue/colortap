@@ -13,7 +13,7 @@ import { TileTextureCache } from './texture-cache';
 import { directionalPolygon, layerBounds, revealMatrix, type RevealState } from '../../core/reveal';
 import { PathVectorMask } from '../reveals/vector-mask';
 import { cameraViewBounds } from '../../core/camera';
-import { sameProjectParts } from '../../core/project';
+import { equalData, sameProjectParts } from '../../core/project';
 import { fanPolygon } from '../../core/fan';
 import { CompositeFilter } from './composite-filter';
 import { supportedBlend } from '../../core/compositing';
@@ -59,7 +59,13 @@ interface SceneLayer {
   visible: boolean;
   sprites: Map<string, Sprite>;
   filter?: CompositeFilter;
-  clippingStack?: { container: Container; filter: CompositeFilter; parentWorld: Affine };
+  filterKey?: string;
+  clippingStack?: {
+    container: Container;
+    filter: CompositeFilter;
+    parentWorld: Affine;
+    mode: string;
+  };
   maskView?: {
     root: Container;
     background: Graphics;
@@ -80,11 +86,12 @@ export class LayerScene {
   private selected: string | null = null;
   private selectedLOD: number | null = null;
   private desired = 0;
-  private raf = 0;
+  private needsReconcile = false;
   private filters = 0;
   private documentFilter?: CompositeFilter;
   private disposed = false;
-  private lastReconcile = 0;
+  private created = 0;
+  private removed = 0;
   constructor(
     readonly handle: string,
     private readonly viewport: Viewport,
@@ -102,19 +109,43 @@ export class LayerScene {
       'rootLayersBottomToTop',
       'pixelSources',
       'reveals',
+      'paths',
     ]);
+    if (this.project && this.project.id !== project.id) this.clear();
+    const previous = this.project;
     this.project = project;
     if (unchanged) {
       this.update();
       return;
     }
-    this.clear();
-    // Photoshop's transparent document backdrop is not the editor's gray board/grid.
-    if (Object.values(project.layers).some((l) => supportedBlend(l.blendMode) !== 'normal')) {
-      this.documentFilter = new CompositeFilter('normal');
-      this.root.filters = [this.documentFilter];
-      this.filters++;
+    const topology = (p: Project | null) =>
+      p && [
+        p.rootLayersBottomToTop,
+        Object.values(p.layers).map((l) => [
+          l.id,
+          l.kind,
+          l.clippingBaseId,
+          l.kind === 'group' ? l.childrenBottomToTop : null,
+        ]),
+      ];
+    const restructure = !equalData(topology(previous), topology(project));
+    // Detach before reparenting: even a parent/child reversal must never form a transient cycle.
+    if (restructure)
+      for (const e of this.entries.values()) {
+        e.container.removeFromParent();
+        e.clippingStack?.container.removeFromParent();
+      }
+    const needsBackdrop = Object.values(project.layers).some(
+      (l) => supportedBlend(l.blendMode) !== 'normal',
+    );
+    if (needsBackdrop && !this.documentFilter) this.documentFilter = new CompositeFilter('normal');
+    if (!needsBackdrop && this.documentFilter) {
+      this.root.filters = [];
+      this.documentFilter.destroy();
+      this.documentFilter = undefined;
     }
+    this.root.filters = this.documentFilter ? [this.documentFilter] : [];
+    const next = new Map<string, SceneLayer>();
     const visit = (
       ids: string[],
       parent: Container,
@@ -122,85 +153,171 @@ export class LayerScene {
       visible: boolean,
       parentId: string | null = null,
     ) => {
-      let clippingStack: SceneLayer['clippingStack'];
+      let stack: SceneLayer['clippingStack'];
       for (let index = 0; index < ids.length; index++) {
-        const id = ids[index];
-        const l = project.layers[id],
-          container = new Container(),
+        const id = ids[index],
+          l = project.layers[id],
           local = matrix(l.transform),
           world = multiply(parentWorld, local);
-        container.setFromMatrix(new Matrix(local.a, local.b, local.c, local.d, local.tx, local.ty));
-        container.visible = l.enabled && l.opacity > 0;
-        if (!l.clippingBaseId) {
-          clippingStack = undefined;
-          if (project.layers[ids[index + 1]]?.clippingBaseId === id) {
-            const stackContainer = new Container();
-            const filter = new CompositeFilter(l.blendMode, false, l.opacity);
-            stackContainer.filters = [filter];
-            parent.addChild(stackContainer);
-            clippingStack = { container: stackContainer, filter, parentWorld };
-            this.filters++;
-          }
+        let e = this.entries.get(id);
+        if (e && e.layer.kind !== l.kind) {
+          this.destroyEntry(e);
+          e = undefined;
         }
-        const deferred = !l.clippingBaseId && !!clippingStack;
-        const composite = new Container(),
-          reveal = new Container(),
-          content = new Container();
-        container.addChild(composite);
-        composite.addChild(reveal);
-        reveal.addChild(content);
-        const entry: SceneLayer = {
-          container,
-          composite,
-          reveal,
-          content,
-          layer: l,
-          world,
-          baseWorld: world,
-          local,
-          renderLocal: local,
-          parentId,
-          bounds: layerBounds(project, id),
-          visible: visible && container.visible,
-          sprites: new Map(),
-          ...(deferred ? { clippingStack } : {}),
-        };
-        // A group's opacity is applied after its children have composited. Clipping stacks
-        // defer their base's mode/opacity until all source-atop children have been blended.
-        const mode = deferred ? 'normal' : supportedBlend(l.blendMode);
+        if (!e) {
+          const container = new Container(),
+            composite = new Container(),
+            reveal = new Container(),
+            content = new Container();
+          container.addChild(composite);
+          composite.addChild(reveal);
+          reveal.addChild(content);
+          e = {
+            container,
+            composite,
+            reveal,
+            content,
+            layer: l,
+            local,
+            world,
+            baseWorld: world,
+            renderLocal: local,
+            parentId,
+            bounds: layerBounds(project, id),
+            visible: false,
+            sprites: new Map(),
+          };
+          this.created++;
+        }
+        const old = e.layer;
         if (
+          old.kind !== 'group' &&
+          l.kind !== 'group' &&
+          (old.pixelSourceId !== l.pixelSourceId ||
+            previous?.pixelSources[old.pixelSourceId] !== project.pixelSources[l.pixelSourceId])
+        )
+          this.clearSprites(e.sprites);
+        if (
+          old !== l ||
+          previous?.layers !== project.layers ||
+          previous?.pixelSources !== project.pixelSources ||
+          previous?.reveals !== project.reveals ||
+          previous?.paths !== project.paths
+        ) {
+          e.bounds = layerBounds(project, id);
+          e.maskProgress = undefined;
+        }
+        e.layer = l;
+        e.local = local;
+        e.renderLocal = local;
+        e.world = world;
+        e.baseWorld = world;
+        e.parentId = parentId;
+        e.container.setFromMatrix(
+          new Matrix(local.a, local.b, local.c, local.d, local.tx, local.ty),
+        );
+        e.container.visible = l.enabled && l.opacity > 0;
+        e.visible = visible && e.container.visible;
+        if (!l.clippingBaseId) stack = undefined;
+        const deferred = !l.clippingBaseId && project.layers[ids[index + 1]]?.clippingBaseId === id;
+        if (deferred) {
+          if (!e.clippingStack)
+            e.clippingStack = {
+              container: new Container(),
+              filter: new CompositeFilter(l.blendMode),
+              parentWorld,
+              mode: l.blendMode,
+            };
+          stack = e.clippingStack;
+          if (stack.mode !== l.blendMode) {
+            stack.filter.destroy();
+            stack.filter = new CompositeFilter(l.blendMode);
+            stack.mode = l.blendMode;
+          }
+          stack.filter.alpha = l.opacity;
+          stack.parentWorld = parentWorld;
+          stack.container.filters = [stack.filter];
+          stack.container.visible = e.visible;
+          if (stack.container.parent !== parent) parent.addChild(stack.container);
+        } else if (e.clippingStack) {
+          e.container.removeFromParent();
+          e.clippingStack.container.removeChildren();
+          e.clippingStack.filter.destroy();
+          e.clippingStack.container.destroy();
+          e.clippingStack = undefined;
+        }
+        const mode = deferred ? 'normal' : supportedBlend(l.blendMode);
+        const needsFilter =
           l.clippingBaseId ||
           mode !== 'normal' ||
           l.rasterMask?.enabled ||
           (l.kind === 'group' &&
             (l.opacity !== 1 ||
               l.isolation === 'isolated' ||
-              Object.values(project.reveals).some((c) => c.layerId === id)))
-        ) {
-          entry.filter = new CompositeFilter(mode, !!l.clippingBaseId, deferred ? 1 : l.opacity);
-          composite.filters = [entry.filter];
-          this.filters++;
-        } else container.alpha = deferred ? 1 : l.opacity;
-        if (l.rasterMask?.enabled) {
-          const root = new Container(),
-            background = new Graphics();
-          root.addChild(background);
-          reveal.addChild(root);
-          // Container masks default to stencil (binary coverage) in Pixi. Explicitly
-          // use AlphaMask so grayscale/soft edges survive across all mask tiles.
-          const effect = new AlphaMask({ mask: root });
-          content.addEffect(effect);
-          entry.maskView = { root, background, sprites: new Map(), effect };
+              Object.values(project.reveals).some((c) => c.layerId === id)));
+        const filterKey = needsFilter ? `${mode}:${!!l.clippingBaseId}` : undefined;
+        if (e.filterKey !== filterKey) {
+          e.composite.filters = [];
+          e.filter?.destroy();
+          e.filter = filterKey ? new CompositeFilter(mode, !!l.clippingBaseId) : undefined;
+          e.filterKey = filterKey;
         }
-        (clippingStack?.container ?? parent).addChild(container);
-        this.entries.set(id, entry);
-        if (l.kind === 'group') visit(l.childrenBottomToTop, content, world, entry.visible, id);
+        e.composite.filters = e.filter ? [e.filter] : [];
+        e.container.alpha = e.filter || deferred ? 1 : l.opacity;
+        if (e.filter) e.filter.alpha = deferred ? 1 : l.opacity;
+        if (l.rasterMask?.enabled) {
+          if (!e.maskView) {
+            const root = new Container(),
+              background = new Graphics();
+            root.addChild(background);
+            e.reveal.addChild(root);
+            const effect = new AlphaMask({ mask: root });
+            e.content.addEffect(effect);
+            e.maskView = { root, background, sprites: new Map(), effect };
+          } else if (
+            old.rasterMask?.sourceId !== l.rasterMask.sourceId ||
+            (l.rasterMask.sourceId &&
+              previous?.pixelSources[l.rasterMask.sourceId] !==
+                project.pixelSources[l.rasterMask.sourceId])
+          )
+            this.clearSprites(e.maskView.sprites);
+        } else if (e.maskView) {
+          e.content.removeEffect(e.maskView.effect);
+          e.maskView.effect.destroy();
+          e.maskView.root.destroy({ children: true, context: true });
+          e.maskView = undefined;
+        }
+        const destination = stack?.container ?? parent;
+        if (e.container.parent !== destination) destination.addChild(e.container);
+        next.set(id, e);
+        if (l.kind === 'group') visit(l.childrenBottomToTop, e.content, world, e.visible, id);
       }
     };
     visit(project.rootLayersBottomToTop, this.root, matrix(identityTransform()), true);
+    for (const [id, entry] of this.entries) if (!next.has(id)) this.destroyEntry(entry);
+    this.entries = next;
+    this.filters =
+      Number(!!this.documentFilter) +
+      [...next.values()].reduce((n, e) => n + Number(!!e.filter) + Number(!!e.clippingStack), 0);
     this.update();
   }
+  private clearSprites(sprites: Map<string, Sprite>): void {
+    for (const sprite of sprites.values()) sprite.destroy();
+    sprites.clear();
+  }
+  private destroyEntry(e: SceneLayer): void {
+    e.filter?.destroy();
+    e.clippingStack?.filter.destroy();
+    if (e.maskView) {
+      e.content.removeEffect(e.maskView.effect);
+      e.maskView.effect.destroy();
+    }
+    e.container.destroy({ children: true, context: true });
+    e.clippingStack?.container.destroy();
+    this.removed++;
+  }
   select(id: string | null): void {
+    if (this.selected === id) return;
     this.selected = id;
     this.update();
   }
@@ -309,16 +426,20 @@ export class LayerScene {
       }
     }
     // Texture requests are driven by visibility/viewport changes, not every opacity tick.
-    if (visibilityChanged || (moved && performance.now() - this.lastReconcile > 80)) this.update();
+    if (visibilityChanged || moved) this.update();
   }
   update(): void {
     if (this.disposed || !this.project) return;
-    cancelAnimationFrame(this.raf);
-    this.raf = requestAnimationFrame(() => this.reconcile());
+    this.needsReconcile = true;
+    this.changed();
+  }
+  flush(): void {
+    if (!this.needsReconcile) return;
+    this.needsReconcile = false;
+    this.reconcile();
   }
   private reconcile(): void {
     if (this.disposed || !this.project) return;
-    this.lastReconcile = performance.now();
     const { zoom, screen } = this.viewport;
     this.selectedLOD = null;
     const topLeft = this.viewport.toWorld({ x: 0, y: 0 });
@@ -348,28 +469,6 @@ export class LayerScene {
           if (entry.maskView) {
             entry.content.filterArea = area;
             entry.maskView.root.boundsArea = area;
-            const mask = entry.layer.rasterMask!;
-            const value = 1 - mask.density + mask.density * mask.defaultValue;
-            const gray = Math.round(value * 255);
-            const g = entry.maskView.background;
-            g.clear()
-              .rect(area.x, area.y, area.width, area.height)
-              .fill((gray << 16) | (gray << 8) | gray);
-            if (mask.sourceId) {
-              const source = this.project.pixelSources[mask.sourceId];
-              const left = Math.max(local.x, mask.position.x);
-              const top = Math.max(local.y, mask.position.y);
-              const right = Math.min(
-                local.x + local.width,
-                mask.position.x + source.originalBounds.width,
-              );
-              const bottom = Math.min(
-                local.y + local.height,
-                mask.position.y + source.originalBounds.height,
-              );
-              if (right > left && bottom > top)
-                g.rect(left, top, right - left, bottom - top).fill(0xffffff);
-            }
           }
         } catch {
           entry.container.visible = false;
@@ -462,37 +561,94 @@ export class LayerScene {
       wantedByPlane.get(w.sprites)!.add(w.tile.assetId);
     }
     this.desired = wanted.length;
-    for (const entry of this.entries.values())
-      for (const sprites of [entry.sprites, ...(entry.maskView ? [entry.maskView.sprites] : [])])
-        for (const [id, sprite] of sprites)
-          if (!wantedByPlane.get(sprites)?.has(id)) {
-            sprite.destroy();
-            sprites.delete(id);
+    const byPlane = new Map<Map<string, Sprite>, Wanted[]>();
+    for (const w of wanted) {
+      if (!byPlane.has(w.sprites)) byPlane.set(w.sprites, []);
+      byPlane.get(w.sprites)!.push(w);
+    }
+    const requests: Wanted[] = [];
+    for (const entry of this.entries.values()) {
+      for (const sprites of [entry.sprites, ...(entry.maskView ? [entry.maskView.sprites] : [])]) {
+        const target = byPlane.get(sprites) ?? [];
+        const failedReplacement =
+          sprites.size > 0 && target.some((w) => this.cache.hasFailed(w.tile.assetId));
+        // A failed replacement must not pin a partial new LOD forever alongside the fallback.
+        if (!failedReplacement) requests.push(...target);
+        // Retain one complete representation until the replacement is ready: drawing both
+        // LODs together would double the alpha of translucent artwork and masks.
+        const ready = target.every((w) => !!this.cache.get(w.tile.assetId));
+        if (!failedReplacement && (ready || sprites.size === 0)) {
+          for (const [id, sprite] of sprites)
+            if (!wantedByPlane.get(sprites)?.has(id)) {
+              sprite.destroy();
+              sprites.delete(id);
+            }
+          for (const w of target) {
+            const texture = this.cache.get(w.tile.assetId);
+            if (texture && !sprites.has(w.tile.assetId)) {
+              const sprite = new Sprite(texture);
+              w.parent.addChild(sprite);
+              sprites.set(w.tile.assetId, sprite);
+            }
           }
+        }
+        // Mask position/density edits also apply to retained tiles.
+        for (const [id, sprite] of sprites) {
+          const isMask = sprites === entry.maskView?.sprites;
+          const sourceId = isMask
+            ? entry.layer.rasterMask?.sourceId
+            : entry.layer.kind !== 'group'
+              ? entry.layer.pixelSourceId
+              : undefined;
+          const tile = sourceId
+            ? this.project.pixelSources[sourceId].levels
+                .flatMap((l) => l.tiles)
+                .find((t) => t.assetId === id)
+            : undefined;
+          if (!tile) continue;
+          const offset = isMask ? entry.layer.rasterMask!.position : { x: 0, y: 0 };
+          sprite.position.set(tile.sourceRect.x + offset.x, tile.sourceRect.y + offset.y);
+          sprite.width = tile.sourceRect.width;
+          sprite.height = tile.sourceRect.height;
+          if (isMask) sprite.alpha = entry.layer.rasterMask!.density;
+        }
+      }
+      if (entry.maskView) {
+        const mask = entry.layer.rasterMask!,
+          view = entry.maskView,
+          area = view.root.boundsArea;
+        if (area) {
+          const gray = Math.round((1 - mask.density + mask.density * mask.defaultValue) * 255);
+          const g = view.background;
+          g.clear()
+            .rect(area.x, area.y, area.width, area.height)
+            .fill((gray << 16) | (gray << 8) | gray);
+          if (mask.sourceId) {
+            const source = this.project.pixelSources[mask.sourceId];
+            // Unknown mask pixels remain black, even when panning exposes a new region.
+            g.rect(
+              mask.position.x,
+              mask.position.y,
+              source.originalBounds.width,
+              source.originalBounds.height,
+            ).fill(0);
+            for (const sprite of view.sprites.values())
+              g.rect(sprite.x, sprite.y, sprite.width, sprite.height).fill(0xffffff);
+          }
+        }
+      }
+    }
+    const retained = [...this.entries.values()].flatMap((e) => [
+      ...e.sprites.keys(),
+      ...(e.maskView?.sprites.keys() ?? []),
+    ]);
     this.cache.request(
-      wanted.map(({ tile }) => ({
+      requests.map(({ tile }) => ({
         asset: this.project!.assets[tile.assetId],
         frame: tile.pixelRect,
       })),
+      retained,
     );
-    for (const { entry, tile, sprites, parent, offset, isMask } of wanted) {
-      const texture = this.cache.get(tile.assetId);
-      if (texture && !sprites.has(tile.assetId)) {
-        const sprite = new Sprite(texture);
-        sprite.position.set(tile.sourceRect.x + offset.x, tile.sourceRect.y + offset.y);
-        sprite.width = tile.sourceRect.width;
-        sprite.height = tile.sourceRect.height;
-        if (isMask) sprite.alpha = entry.layer.rasterMask!.density;
-        parent.addChild(sprite);
-        sprites.set(tile.assetId, sprite);
-      }
-    }
-    // Never display unmasked pixels while the mask's visible tiles are still loading.
-    for (const entry of this.entries.values())
-      if (entry.maskView)
-        entry.composite.renderable = [...(wantedByPlane.get(entry.maskView.sprites) ?? [])].every(
-          (id) => entry.maskView!.sprites.has(id),
-        );
     this.drawSelection();
     this.changed();
   }
@@ -538,6 +694,9 @@ export class LayerScene {
     return {
       ...this.cache.stats(),
       desiredTextures: this.desired,
+      sceneLayersCreated: this.created,
+      sceneLayersRemoved: this.removed,
+      displayedTiles: [...this.entries.values()].reduce((n, e) => n + e.sprites.size, 0),
       selectedLevel: this.selectedLOD,
       isolatedGroups: [...this.entries.values()].filter((e) => e.layer.kind === 'group' && e.filter)
         .length,
@@ -574,21 +733,15 @@ export class LayerScene {
     this.root.filters = [];
     this.documentFilter?.destroy();
     this.documentFilter = undefined;
-    for (const e of this.entries.values()) {
-      e.filter?.destroy();
-      e.clippingStack?.filter.destroy();
-      if (e.maskView) {
-        e.content.removeEffect(e.maskView.effect);
-        e.maskView.effect.destroy();
-      }
-    }
-    this.root.removeChildren().forEach((c) => c.destroy({ children: true, context: true }));
+    for (const e of this.entries.values()) e.container.removeFromParent();
+    for (const e of this.entries.values()) this.destroyEntry(e);
+    this.root.removeChildren();
     this.entries.clear();
     this.filters = 0;
   }
   dispose(): void {
     this.disposed = true;
-    cancelAnimationFrame(this.raf);
+    this.needsReconcile = false;
     this.clear();
     this.cache.dispose();
     this.root.destroy();
