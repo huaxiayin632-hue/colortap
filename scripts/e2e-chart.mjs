@@ -377,6 +377,11 @@ try {
     await clickAt({ x: 400, y: 280 });
     await page.keyboard.press('Enter');
     await countNotes(4);
+    // The disabled hint is not a path node.
+    const nodeOptions = page
+      .getByLabel('路径节点', { exact: true })
+      .locator('option:not([disabled])');
+    assert.equal(await nodeOptions.count(), 2);
     await drag({ x: 200, y: 280 }, { x: 160, y: 160 });
     assert.ok(
       Math.abs(Number(await page.getByLabel('出柄 Y', { exact: true }).inputValue()) + 120) < 3,
@@ -388,19 +393,19 @@ try {
     );
     await history();
     await page.getByRole('button', { name: '添加节点', exact: true }).click();
-    assert.equal(await page.getByLabel('路径节点', { exact: true }).locator('option').count(), 3);
+    assert.equal(await nodeOptions.count(), 3);
     await page.getByRole('button', { name: '删除节点', exact: true }).click();
-    assert.equal(await page.getByLabel('路径节点', { exact: true }).locator('option').count(), 2);
+    assert.equal(await nodeOptions.count(), 2);
     await history();
-    assert.equal(await page.getByLabel('路径节点', { exact: true }).locator('option').count(), 3);
+    assert.equal(await nodeOptions.count(), 3);
     await history();
-    assert.equal(await page.getByLabel('路径节点', { exact: true }).locator('option').count(), 2);
+    assert.equal(await nodeOptions.count(), 2);
     await property('Slider 持续秒数', 2);
     const midpoint = await canvasPoint({ x: 250, y: 190 });
     await page.mouse.dblclick(midpoint.x, midpoint.y);
-    assert.equal(await page.getByLabel('路径节点', { exact: true }).locator('option').count(), 3);
+    assert.equal(await nodeOptions.count(), 3);
     await page.keyboard.press('Delete');
-    assert.equal(await page.getByLabel('路径节点', { exact: true }).locator('option').count(), 2);
+    assert.equal(await nodeOptions.count(), 2);
     await history();
     await history();
     saved = await save(projectFile);
