@@ -593,7 +593,7 @@ onBeforeUnmount(() => {
                 step="0.1"
                 :max="editor.playback.value.durationUs / 1000000"
                 :disabled="!editor.playback.value.ready || editor.busy.value"
-                :value="(editor.playback.value.timeUs / 1000000).toFixed(3)"
+                :value="editor.playback.value.timeUs / 1000000"
                 @focus="editor.pause()"
                 @commit="editor.seek(Math.round(Number($event) * 1000000))"
             /></label>
