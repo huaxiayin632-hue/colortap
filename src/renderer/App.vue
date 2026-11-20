@@ -67,6 +67,15 @@ const audioAssets = computed(() =>
     ),
 );
 const projectPath = computed(() => editor.session.value?.filePath ?? '尚未保存到文件');
+const snapshotLabel = computed(() =>
+  editor.recoveryError.value
+    ? '恢复快照写入失败'
+    : editor.recoveryWriting.value
+      ? '正在保留恢复快照…'
+      : editor.recoveryTime.value
+        ? `恢复快照 ${new Date(editor.recoveryTime.value).toLocaleTimeString()}`
+        : '自动恢复：每 15 秒',
+);
 const stageMetrics = computed(() => {
   editor.zoom.value;
   editor.sceneRevision.value;
@@ -634,6 +643,16 @@ onBeforeUnmount(() => {
       ><span class="save-state" :title="projectPath">{{
         editor.dirty.value ? '未保存修改' : editor.session.value?.filePath ? '已保存' : '新工程'
       }}</span
+      ><span
+        data-testid="recovery-state"
+        :class="{ 'error-text': editor.recoveryError.value }"
+        :title="
+          editor.recoveryError.value ||
+          '每 15 秒保留已提交的修改；可恢复到显示的快照时间，不替代正式保存。'
+        "
+        >{{ snapshotLabel }}</span
+      ><button v-if="editor.recoveryEntries.value.length" @click="editor.showRecovery.value = true">
+        待恢复工程</button
       ><button @click="showPerformance = true" title="查看当前工程的帧率、内存和受管纹理估算">
         {{ editor.fps.value ? editor.fps.value.toFixed(0) : '—' }} FPS
         <span class="muted">{{ memoryLabel }}</span>
@@ -747,15 +766,59 @@ onBeforeUnmount(() => {
     <div v-if="editor.confirmReplacement.value" class="modal-backdrop top-modal">
       <div class="modal" role="dialog" aria-modal="true" aria-label="未保存的修改">
         <h2>是否先保存当前工程？</h2>
-        <p class="help-text">保存后会继续刚才的操作。</p>
+        <p class="help-text">
+          {{
+            editor.confirmationKind.value === 'exit'
+              ? '保存成功后退出；取消路径或保存失败会保留窗口和编辑内容。'
+              : '保存后会继续刚才的操作。'
+          }}
+        </p>
         <div class="modal-actions">
           <button @click="editor.confirmReplacement.value?.('cancel')">取消</button
-          ><button @click="editor.confirmReplacement.value?.('discard')">放弃修改</button
+          ><button @click="editor.confirmReplacement.value?.('discard')">
+            {{ editor.confirmationKind.value === 'exit' ? '不保存并退出' : '放弃修改' }}</button
           ><button class="primary" @click="editor.confirmReplacement.value?.('save')">
-            先保存
+            {{ editor.confirmationKind.value === 'exit' ? '保存并退出' : '先保存' }}
           </button>
         </div>
       </div>
+    </div>
+    <div v-if="editor.showRecovery.value" class="modal-backdrop">
+      <section
+        class="modal recovery-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="恢复未保存工程"
+      >
+        <h2>发现未保存的工程</h2>
+        <p class="help-text">恢复到以下快照时间。恢复后仍需正式保存；暂不处理会保留这些内容。</p>
+        <article
+          v-for="entry in editor.recoveryEntries.value"
+          :key="entry.id"
+          class="recovery-entry"
+        >
+          <strong>{{ entry.name }}{{ entry.filePath ? '' : '（未命名文件）' }}</strong>
+          <p>{{ new Date(entry.savedAt).toLocaleString() }}</p>
+          <p v-if="entry.filePath" class="help-text">{{ entry.filePath }}</p>
+          <div class="modal-actions">
+            <button :disabled="editor.busy.value" @click="editor.discardRecovery(entry)">
+              丢弃此快照
+            </button>
+            <button
+              class="primary"
+              :disabled="editor.busy.value"
+              @click="editor.restoreRecovery(entry)"
+            >
+              恢复工程
+            </button>
+          </div>
+        </article>
+        <div class="modal-actions">
+          <button :disabled="editor.busy.value" @click="editor.showRecovery.value = false">
+            暂不处理
+          </button>
+        </div>
+      </section>
     </div>
     <div v-if="showPerformance" class="modal-backdrop" @keydown.esc="showPerformance = false">
       <section

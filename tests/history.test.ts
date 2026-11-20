@@ -219,3 +219,29 @@ describe('document commands and history', () => {
     expect(history.current.assets[image.id]).toEqual(image);
   });
 });
+describe('recovery save boundaries', () => {
+  it('restored state remains dirty through undo until explicitly saved', () => {
+    const project = createProject(),
+      history = new EditHistory(project, true);
+    expect(history.dirty).toBe(true);
+    history.execute({ type: 'rename', name: '恢复后修改' });
+    history.undo();
+    expect(history.dirty).toBe(true);
+    history.markSaved();
+    expect(history.dirty).toBe(false);
+  });
+  it('exposes committed edits and marks only the document actually saved', () => {
+    const history = new EditHistory(createProject());
+    history.execute({ type: 'rename', name: '正在保存' });
+    const saved = history.committed;
+    history.preview({ type: 'set-bpm', bpm: 150 });
+    expect(history.committed).toBe(saved);
+    history.markSaved(saved);
+    expect(history.dirty).toBe(true);
+    history.execute({ type: 'set-bpm', bpm: 160 });
+    history.markSaved(saved);
+    expect(history.dirty).toBe(true);
+    history.undo();
+    expect(history.dirty).toBe(false);
+  });
+});

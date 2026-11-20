@@ -1700,3 +1700,12 @@ summary {
     scroll-behavior: auto !important;
   }
 }
+.recovery-modal {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.recovery-entry {
+  border-top: 1px solid #535760;
+  padding: 14px 0;
+  overflow-wrap: anywhere;
+}

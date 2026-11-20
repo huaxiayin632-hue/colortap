@@ -15,6 +15,7 @@
     "test:images": "node scripts/e2e-images.mjs",
     "test:compositing": "node scripts/e2e-compositing.mjs",
     "test:rendering": "node scripts/e2e-rendering.mjs",
+    "test:recovery": "node scripts/e2e-recovery.mjs",
     "test:edits": "node scripts/e2e-edits.mjs",
     "test:chart": "node scripts/e2e-chart.mjs",
     "test:glow": "node scripts/e2e-glow.mjs",

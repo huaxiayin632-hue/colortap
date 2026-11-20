@@ -5,6 +5,19 @@ const api: DesktopAPI = {
   newProject: (project) => ipcRenderer.invoke(channels.newProject, project),
   openProject: () => ipcRenderer.invoke(channels.openProject),
   saveProject: (request) => ipcRenderer.invoke(channels.saveProject, request),
+  snapshot: (request) => ipcRenderer.invoke(channels.snapshot, request),
+  listRecoveries: () => ipcRenderer.invoke(channels.listRecoveries),
+  restoreRecovery: (request) => ipcRenderer.invoke(channels.restoreRecovery, request),
+  discardRecovery: (request) => ipcRenderer.invoke(channels.discardRecovery, request),
+  discardSessionRecovery: (request) => ipcRenderer.invoke(channels.discardSessionRecovery, request),
+  finishClose: (request) => ipcRenderer.invoke(channels.finishClose, request),
+  onCloseRequested: (listener) => {
+    const callback = () => listener();
+    ipcRenderer.on(channels.closeRequested, callback);
+    return () => {
+      ipcRenderer.removeListener(channels.closeRequested, callback);
+    };
+  },
   importMusic: (handle) => ipcRenderer.invoke(channels.importMusic, handle),
   importSound: (handle) => ipcRenderer.invoke(channels.importSound, handle),
   importImage: (request) => ipcRenderer.invoke(channels.importImage, request),
@@ -22,6 +35,7 @@ const api: DesktopAPI = {
   readAsset: (request) => ipcRenderer.invoke(channels.readAsset, request),
   discardImport: (request) => ipcRenderer.invoke(channels.discardImport, request),
   closeSession: (handle) => ipcRenderer.invoke(channels.closeSession, handle),
+  activateSession: (request) => ipcRenderer.invoke(channels.activateSession, request),
   setDirty: (request) => ipcRenderer.invoke(channels.setDirty, request),
   processSample: () => ipcRenderer.invoke(channels.processSample),
   exportPerformance: (report) => ipcRenderer.invoke(channels.exportPerformance, report),

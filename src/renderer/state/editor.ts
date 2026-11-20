@@ -12,7 +12,12 @@ import { PlaybackTake } from '../../core/playback';
 import { createProject, type Project, type Size, type Vec2 } from '../../shared/models';
 import type { ImageImport, ImageImportProgress } from '../../shared/images';
 import { inverse, isLocked, parents, point, worldMatrix } from '../../core/layers';
-import { unwrap, type ProcessSample, type ProjectSession } from '../../shared/ipc';
+import {
+  unwrap,
+  type ProcessSample,
+  type ProjectSession,
+  type RecoveryEntry,
+} from '../../shared/ipc';
 import { AudioTransport } from '../audio/transport';
 import { SoundEngine } from '../audio/sound-engine';
 import { createAudioAnalysis } from '../audio/analysis-controller';
@@ -24,6 +29,18 @@ import { createReveals } from '../reveals/controller';
 
 export function createEditor() {
   let history = new EditHistory(createProject());
+  let committed = history.committed,
+    version = 0;
+  let snapshottedVersion = -1,
+    snapshotPending = false;
+  const recoveryEntries = shallowRef<RecoveryEntry[]>([]);
+  const showRecovery = ref(false);
+  const recoveryTime = ref<string | null>(null);
+  const recoveryError = ref('');
+  const recoveryWriting = ref(false);
+  const confirmationKind = ref<'replace' | 'exit'>('replace');
+  let recoveryTimer: ReturnType<typeof setInterval> | undefined;
+  let removeClose: (() => void) | undefined;
   const project = shallowRef(history.current);
   const session = shallowRef<ProjectSession | null>(null);
   const busy = ref(false),
@@ -138,6 +155,10 @@ export function createEditor() {
       playback.value = next;
   }
   function publish(): void {
+    if (history.committed !== committed) {
+      committed = history.committed;
+      version++;
+    }
     project.value = history.current;
     chart.setProject(history.current);
     reveals.setProject(history.current);
@@ -154,7 +175,7 @@ export function createEditor() {
     if (selectedLayerId.value && !project.value.layers[selectedLayerId.value]) selectLayer(null);
     if (session.value) stage.value?.setScene(project.value, session.value.handle);
     if (session.value)
-      void window.desktop.setDirty({ handle: session.value.handle, dirty: dirty.value });
+      void window.desktop.setDirty({ handle: session.value.handle, dirty: dirty.value, version });
   }
   async function run<T>(operation: () => Promise<T>): Promise<T | undefined> {
     if (busy.value) return;
@@ -241,12 +262,24 @@ export function createEditor() {
     refresh();
   }
   async function adopt(next: ProjectSession): Promise<void> {
+    unwrap(
+      await window.desktop.activateSession({
+        handle: next.handle,
+        version: next.recovery?.version ?? 0,
+        dirty: Boolean(next.recovery),
+      }),
+    );
     analysis.cancel();
     chart.setMode('edit');
     const previous = session.value;
     transport.unload();
     buffer.value = null;
-    history = new EditHistory(next.project);
+    history = new EditHistory(next.project, Boolean(next.recovery));
+    committed = history.committed;
+    version = next.recovery?.version ?? 0;
+    snapshottedVersion = next.recovery?.version ?? -1;
+    recoveryTime.value = next.recovery?.savedAt ?? null;
+    recoveryError.value = '';
     session.value = next;
     selectLayer(null);
     lastImport.value = null;
@@ -258,32 +291,85 @@ export function createEditor() {
     chart.setTool(Object.keys(next.project.notes).length ? 'select' : 'layers');
     if (previous) unwrap(await window.desktop.closeSession(previous.handle));
     if (next.warnings.length) notify(next.warnings.join('；'), 'warning');
-    else notify(next.filePath ? '工程已打开' : '新工程已准备好，可以导入音乐', 'success');
+    else
+      notify(
+        next.recovery
+          ? '已恢复快照，请正式保存工程'
+          : next.filePath
+            ? '工程已打开'
+            : '新工程已准备好，可以导入音乐',
+        'success',
+      );
     try {
       await syncMusic();
     } catch (error) {
       notify(error instanceof Error ? error.message : '音乐加载失败', 'warning');
     }
   }
+  async function snapshot(): Promise<void> {
+    if (
+      busy.value ||
+      gestureActive ||
+      snapshotPending ||
+      (!history.dirty && !recoveryTime.value) ||
+      !session.value ||
+      version === snapshottedVersion
+    )
+      return;
+    const handle = session.value.handle,
+      captured = committed,
+      capturedVersion = version;
+    snapshotPending = true;
+    recoveryWriting.value = true;
+    try {
+      const entry = unwrap(
+        await window.desktop.snapshot({ handle, project: captured, version: capturedVersion }),
+      );
+      if (session.value?.handle === handle && entry) {
+        snapshottedVersion = capturedVersion;
+        recoveryTime.value = entry.savedAt;
+        recoveryError.value = '';
+      }
+    } catch (error) {
+      if (session.value?.handle === handle) {
+        recoveryError.value = `自动恢复保存失败：${error instanceof Error ? error.message : '请重试'}`;
+        notify(recoveryError.value + '。上一次完整快照仍保留，请尽快正式保存。', 'warning');
+      }
+    } finally {
+      snapshotPending = false;
+      recoveryWriting.value = false;
+    }
+  }
   async function save(saveAs = false): Promise<boolean> {
     endGesture(false);
     if (!session.value) return false;
+    const handle = session.value.handle,
+      savedHistory = history,
+      captured = committed,
+      savedVersion = version;
     const result = unwrap(
       await window.desktop.saveProject({
-        handle: session.value.handle,
-        project: project.value,
+        handle,
+        project: captured,
         saveAs,
+        version: savedVersion,
       }),
     );
     if (!result) return false;
+    if (session.value?.handle !== handle || history !== savedHistory) return false;
     session.value = { ...session.value, filePath: result.filePath };
-    history.markSaved();
+    history.markSaved(captured);
+    if (version === savedVersion) {
+      recoveryTime.value = null;
+      recoveryError.value = '';
+    }
     publish();
-    notify('工程和素材已保存', 'success');
-    return true;
+    notify(result.warning ?? '工程和素材已保存', result.warning ? 'warning' : 'success');
+    return !history.dirty;
   }
-  async function allowReplacement(): Promise<boolean> {
+  async function allowReplacement(kind: 'replace' | 'exit' = 'replace'): Promise<boolean> {
     if (!dirty.value) return true;
+    confirmationKind.value = kind;
     const choice = await new Promise<'save' | 'discard' | 'cancel'>((resolve) => {
       confirmReplacement.value = resolve;
     });
@@ -292,13 +378,65 @@ export function createEditor() {
     if (choice === 'save') return save();
     return true;
   }
+  async function discardCurrentRecovery(): Promise<void> {
+    if (!session.value) return;
+    unwrap(await window.desktop.discardSessionRecovery({ handle: session.value.handle, version }));
+    recoveryTime.value = null;
+  }
+  async function requestClose(): Promise<void> {
+    if (busy.value) {
+      notify('正在处理当前操作，请完成后再关闭窗口', 'warning');
+      return;
+    }
+    endGesture(false);
+    pause();
+    await run(async () => {
+      if (!(await allowReplacement('exit'))) return;
+      await discardCurrentRecovery();
+      unwrap(
+        await window.desktop.finishClose({
+          handle: session.value?.handle ?? null,
+          version: session.value ? version : 0,
+        }),
+      );
+    });
+  }
+  async function restoreRecovery(entry: RecoveryEntry): Promise<void> {
+    endGesture(false);
+    await run(async () => {
+      if (!(await allowReplacement())) return;
+      const next = unwrap(
+        await window.desktop.restoreRecovery({ id: entry.id, token: entry.token }),
+      );
+      await replaceWith(next);
+      recoveryEntries.value = recoveryEntries.value.filter((item) => item.id !== entry.id);
+      showRecovery.value = false;
+    });
+  }
+  async function replaceWith(next: ProjectSession): Promise<void> {
+    try {
+      await discardCurrentRecovery();
+    } catch (error) {
+      await window.desktop.closeSession(next.handle);
+      throw error;
+    }
+    await adopt(next);
+  }
+  async function discardRecovery(entry: RecoveryEntry): Promise<void> {
+    await run(async () => {
+      unwrap(await window.desktop.discardRecovery({ id: entry.id, token: entry.token }));
+      recoveryEntries.value = recoveryEntries.value.filter((item) => item.id !== entry.id);
+      if (!recoveryEntries.value.length) showRecovery.value = false;
+    });
+  }
   async function newDocument(name: string, size: Size): Promise<boolean> {
     endGesture(false);
     return (
       (await run(async () => {
         if (!(await allowReplacement())) return false;
         const document = createProject(name, size);
-        await adopt(unwrap(await window.desktop.newProject(document)));
+        const next = unwrap(await window.desktop.newProject(document));
+        await replaceWith(next);
         return true;
       })) ?? false
     );
@@ -308,7 +446,9 @@ export function createEditor() {
     await run(async () => {
       if (!(await allowReplacement())) return;
       const next = unwrap(await window.desktop.openProject());
-      if (next) await adopt(next);
+      if (next) {
+        await replaceWith(next);
+      }
     });
   }
   async function importMusic(): Promise<void> {
@@ -573,10 +713,25 @@ export function createEditor() {
     raf = requestAnimationFrame(frame);
   }
   async function initialize(): Promise<void> {
+    removeClose = window.desktop.onCloseRequested(() => {
+      void requestClose();
+    });
     removeProgress = window.desktop.onImageProgress((value) => {
       if (value.handle === session.value?.handle) imageProgress.value = value;
     });
     await run(async () => adopt(unwrap(await window.desktop.newProject(project.value))));
+    await run(async () => {
+      const recoveries = unwrap(await window.desktop.listRecoveries());
+      recoveryEntries.value = recoveries.entries;
+      showRecovery.value = Boolean(recoveries.entries.length);
+      if (recoveries.warnings.length) {
+        recoveryError.value = recoveries.warnings.join('；');
+        notify(recoveryError.value, 'warning');
+      }
+    });
+    recoveryTimer = setInterval(() => {
+      void snapshot();
+    }, 15000);
     raf = requestAnimationFrame(frame);
     const sample = async () => {
       const result = await window.desktop.processSample();
@@ -618,6 +773,8 @@ export function createEditor() {
     sounds.dispose();
     cancelAnimationFrame(raf);
     clearInterval(sampleTimer);
+    clearInterval(recoveryTimer);
+    removeClose?.();
     removeProgress?.();
     chart.dispose();
     reveals.dispose();
@@ -654,6 +811,14 @@ export function createEditor() {
     resources,
     stage,
     confirmReplacement,
+    confirmationKind,
+    recoveryEntries,
+    showRecovery,
+    recoveryTime,
+    recoveryError,
+    recoveryWriting,
+    restoreRecovery,
+    discardRecovery,
     selectedLayerId,
     selectedLayer,
     selectLayer,

@@ -494,10 +494,10 @@ try {
   report.finishedAt = new Date().toISOString();
   await fs.writeFile(path.join(results, 'report.json'), JSON.stringify(report, null, 2));
   if (application) {
-    // This profile contains generated test data only. Prevent a native dirty-document prompt from hanging cleanup.
+    // This profile contains generated test data only; exit without waiting for the close dialog.
     await application
-      .evaluate(({ dialog }) => {
-        dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
+      .evaluate(({ app }) => {
+        app.exit(0);
       })
       .catch(() => {});
     await application.close().catch(() => {});
