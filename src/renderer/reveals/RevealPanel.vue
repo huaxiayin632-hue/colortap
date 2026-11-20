@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import type { Editor } from '../state/editor';
 import type { Easing, RevealEffect, Trigger } from '../../shared/models';
 import { effectLabels, nominalClipRange } from '../../core/reveal';
-import CommitInput from '../panels/CommitInput.vue';
+import NumberField from '../panels/NumberField.vue';
 import OutlineProperties from './OutlineProperties.vue';
 import FanProperties from './FanProperties.vue';
 const props = defineProps<{ editor: Editor }>();
@@ -297,9 +297,10 @@ function smooth() {
         </select></label
       >
       <label v-else class="stacked-label"
-        >出现时间 / 秒<CommitInput
+        >出现时间 / 秒<NumberField
           aria-label="显现时间"
           type="number"
+          :precision="6"
           step="0.01"
           :disabled="disabled"
           :value="c.tempo.value.resolve(clip.trigger.at) / 1e6"
@@ -360,9 +361,10 @@ function smooth() {
       </p>
       <div class="two-fields">
         <label
-          >延迟 / 秒<CommitInput
+          >延迟 / 秒<NumberField
             aria-label="显现延迟"
             type="number"
+            :precision="6"
             min="0"
             step="0.01"
             :disabled="disabled"
@@ -370,9 +372,10 @@ function smooth() {
             @commit="r.patch({ delayUs: Math.max(0, Math.round(Number($event) * 1e6)) })"
         /></label>
         <label v-if="clip.progress.kind === 'elapsed'"
-          >时长 / 秒<CommitInput
+          >时长 / 秒<NumberField
             aria-label="显现时长"
             type="number"
+            :precision="6"
             min="0"
             step="0.01"
             :disabled="disabled"
@@ -419,16 +422,20 @@ function smooth() {
       </div>
       <div v-if="e.kind === 'slide-in'" class="two-fields">
         <label
-          >起始偏移 X<CommitInput
+          >起始偏移 X<NumberField
             aria-label="滑入偏移 X"
             type="number"
+            :precision="2"
+            step="1"
             :disabled="disabled"
             :value="e.offset.x"
             @commit="r.patchEffect({ offset: { ...e.offset, x: Number($event) } })" /></label
         ><label
-          >起始偏移 Y<CommitInput
+          >起始偏移 Y<NumberField
             aria-label="滑入偏移 Y"
             type="number"
+            :precision="2"
+            step="1"
             :disabled="disabled"
             :value="e.offset.y"
             @commit="r.patchEffect({ offset: { ...e.offset, y: Number($event) } })"
@@ -436,18 +443,20 @@ function smooth() {
       </div>
       <div v-if="e.kind === 'pop'" class="two-fields">
         <label
-          >初始缩放<CommitInput
+          >初始缩放<NumberField
             aria-label="弹出初始缩放"
             type="number"
+            :precision="3"
             min="0.01"
             step="0.05"
             :disabled="disabled"
             :value="e.fromScale"
             @commit="r.patchEffect({ fromScale: Number($event) })" /></label
         ><label
-          >弹性幅度<CommitInput
+          >弹性幅度<NumberField
             aria-label="弹出弹性"
             type="number"
+            :precision="3"
             min="0"
             step="0.05"
             :disabled="disabled"
@@ -456,9 +465,11 @@ function smooth() {
         /></label>
       </div>
       <label v-if="e.kind === 'directional'" class="stacked-label"
-        >方向 / 度<CommitInput
+        >方向 / 度<NumberField
           aria-label="方向显现角度"
           type="number"
+          :precision="2"
+          step="1"
           :disabled="disabled"
           :value="Math.round((Math.atan2(e.direction.y, e.direction.x) * 180) / Math.PI)"
           @commit="
@@ -501,9 +512,11 @@ function smooth() {
           </select></label
         >
         <label v-if="e.kind === 'path'" class="stacked-label"
-          >遮罩宽度 / 插画像素<CommitInput
+          >遮罩宽度 / 插画像素<NumberField
             aria-label="显现遮罩宽度"
             type="number"
+            :precision="2"
+            step="1"
             min="0.1"
             :disabled="disabled"
             :value="e.maskWidth"

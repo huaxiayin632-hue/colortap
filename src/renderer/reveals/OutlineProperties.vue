@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { OutlineReveal } from '../../shared/models';
 import type { RevealController } from './controller';
-import CommitInput from '../panels/CommitInput.vue';
+import NumberField from '../panels/NumberField.vue';
 const props = defineProps<{
   controller: RevealController;
   effect: OutlineReveal;
@@ -46,9 +46,10 @@ function mode(value: string) {
     >
     <div class="two-fields">
       <label
-        >起点 / 路径长度 %<CommitInput
+        >起点 / 路径长度 %<NumberField
           aria-label="白线起点"
           type="number"
+          :precision="1"
           min="0"
           max="100"
           step="1"
@@ -57,9 +58,10 @@ function mode(value: string) {
           @commit="drawing({ start: Number($event) / 100 })"
       /></label>
       <label v-if="effect.drawing.mode === 'bidirectional'"
-        >正向速度占比 / %<CommitInput
+        >正向速度占比 / %<NumberField
           aria-label="白线正向速度比例"
           type="number"
+          :precision="1"
           min="0"
           max="100"
           step="1"
@@ -89,18 +91,20 @@ function mode(value: string) {
     >
     <div class="two-fields">
       <label
-        >线宽 / 插画像素<CommitInput
+        >线宽 / 插画像素<NumberField
           aria-label="白线宽度"
           type="number"
+          :precision="2"
           min="0.1"
           step="0.5"
           :disabled="disabled"
           :value="effect.stroke.width"
           @commit="stroke({ width: Number($event) })" /></label
       ><label
-        >发光强度 / 0–4<CommitInput
+        >发光强度 / 0–4<NumberField
           aria-label="白线发光强度"
           type="number"
+          :precision="3"
           min="0"
           max="4"
           step="0.1"
@@ -119,9 +123,10 @@ function mode(value: string) {
       />显示移动端点光点</label
     >
     <label v-if="effect.stroke.tips" class="stacked-label"
-      >光点半径 / 插画像素<CommitInput
+      >光点半径 / 插画像素<NumberField
         aria-label="白线光点半径"
         type="number"
+        :precision="2"
         min="0.1"
         step="0.5"
         :disabled="disabled"
@@ -130,9 +135,10 @@ function mode(value: string) {
     /></label>
     <h3>② 整层显现</h3>
     <label class="stacked-label"
-      >白线完成触发阈值 / %<CommitInput
+      >白线完成触发阈值 / %<NumberField
         aria-label="整层显现阈值"
         type="number"
+        :precision="1"
         min="0"
         max="100"
         step="1"
@@ -164,9 +170,10 @@ function mode(value: string) {
           <option value="pop">Pop · 弹出</option>
         </select></label
       ><label v-if="effect.layer.kind !== 'instant'"
-        >显现时长 / 秒<CommitInput
+        >显现时长 / 秒<NumberField
           aria-label="描边后图层时长"
           type="number"
+          :precision="6"
           min="0"
           step="0.05"
           :disabled="disabled"
@@ -176,18 +183,20 @@ function mode(value: string) {
     </div>
     <div v-if="effect.layer.kind === 'pop'" class="two-fields">
       <label
-        >初始缩放<CommitInput
+        >初始缩放<NumberField
           aria-label="描边后初始缩放"
           type="number"
+          :precision="3"
           min="0.01"
           step="0.05"
           :disabled="disabled"
           :value="effect.layer.fromScale"
           @commit="layer({ fromScale: Number($event) })" /></label
       ><label
-        >弹性幅度<CommitInput
+        >弹性幅度<NumberField
           aria-label="描边后弹性"
           type="number"
+          :precision="3"
           min="0"
           step="0.05"
           :disabled="disabled"
@@ -213,9 +222,10 @@ function mode(value: string) {
           <option value="hide">立即消失</option>
         </select></label
       ><label v-if="effect.lineAfter.kind === 'fade'"
-        >淡出时长 / 秒<CommitInput
+        >淡出时长 / 秒<NumberField
           aria-label="白线淡出时长"
           type="number"
+          :precision="6"
           min="0"
           step="0.05"
           :disabled="disabled"

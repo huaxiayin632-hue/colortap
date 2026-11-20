@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue';
 import { createEditor } from './state/editor';
 import { formatTime } from '../core/timing';
 import CanvasPanel from './panels/CanvasPanel.vue';
 import CommitInput from './panels/CommitInput.vue';
+import NumberField, { numberGestureKey } from './panels/NumberField.vue';
 import LayerPanel from './panels/LayerPanel.vue';
 import LayerInspector from './panels/LayerInspector.vue';
 import TimelinePanel from './timeline/TimelinePanel.vue';
@@ -17,6 +18,7 @@ import CameraPanel from './camera/CameraPanel.vue';
 import type { ChartTool } from './chart/controller';
 
 const editor = createEditor();
+provide(numberGestureKey, { begin: editor.beginGesture, end: editor.endGesture });
 const inspectorTab = ref<'objects' | 'sounds' | 'camera' | 'music'>('objects');
 const inspectorScroll = ref<HTMLElement>();
 function showInspector(tab: typeof inspectorTab.value) {
@@ -375,9 +377,10 @@ onBeforeUnmount(() => {
         }}</output
         ><span class="duration-display">/ {{ musicDuration }}</span>
         <label class="bpm-inline"
-          >BPM<CommitInput
+          >BPM<NumberField
             aria-label="BPM"
             type="number"
+            :precision="3"
             min="0.001"
             step="1"
             :disabled="readOnlySettings"
@@ -510,18 +513,20 @@ onBeforeUnmount(() => {
             <h2>画板</h2>
             <div class="two-fields">
               <label
-                >宽<CommitInput
+                >宽<NumberField
                   aria-label="画板宽度"
                   type="number"
+                  :precision="0"
                   min="1"
                   step="1"
                   :disabled="readOnlySettings"
                   :value="editor.project.value.stage.artworkSize.width"
                   @commit="changeSize('width', $event)" /></label
               ><label
-                >高<CommitInput
+                >高<NumberField
                   aria-label="画板高度"
                   type="number"
+                  :precision="0"
                   min="1"
                   step="1"
                   :disabled="readOnlySettings"
@@ -537,17 +542,21 @@ onBeforeUnmount(() => {
             <h2>游戏输出</h2>
             <div class="two-fields">
               <label
-                >宽<CommitInput
+                >宽<NumberField
                   aria-label="输出宽度"
                   type="number"
+                  :precision="0"
+                  step="1"
                   min="1"
                   :disabled="readOnlySettings"
                   :value="editor.project.value.output.size.width"
                   @commit="changeSize('width', $event, true)" /></label
               ><label
-                >高<CommitInput
+                >高<NumberField
                   aria-label="输出高度"
                   type="number"
+                  :precision="0"
+                  step="1"
                   min="1"
                   :disabled="readOnlySettings"
                   :value="editor.project.value.output.size.height"
@@ -560,9 +569,10 @@ onBeforeUnmount(() => {
             <h2>节拍与时间</h2>
             <label class="stacked-label"
               >第零拍位置 <span class="unit">毫秒</span
-              ><CommitInput
+              ><NumberField
                 aria-label="第零拍位置"
                 type="number"
+                :precision="3"
                 step="1"
                 :disabled="readOnlySettings"
                 :value="editor.project.value.timing.beatZeroUs / 1000"
@@ -574,9 +584,10 @@ onBeforeUnmount(() => {
                 " /></label
             ><label class="stacked-label seek-field"
               >定位到 <span class="unit">秒</span
-              ><CommitInput
+              ><NumberField
                 aria-label="定位到秒"
                 type="number"
+                :precision="6"
                 min="0"
                 step="0.1"
                 :max="editor.playback.value.durationUs / 1000000"

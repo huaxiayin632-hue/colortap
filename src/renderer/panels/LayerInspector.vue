@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import type { Editor } from '../state/editor';
 import { isLocked } from '../../core/layers';
 import CommitInput from './CommitInput.vue';
+import NumberField from './NumberField.vue';
 const props = defineProps<{ editor: Editor }>();
 const layer = computed(() => props.editor.selectedLayer.value);
 const locked = computed(() =>
@@ -62,16 +63,20 @@ const source = computed(() =>
     /></label>
     <div class="two-fields">
       <label
-        >X 位置<CommitInput
+        >X 位置<NumberField
           aria-label="图层 X"
           type="number"
+          :precision="2"
+          step="1"
           :value="layer.transform.position.x"
           :disabled="locked"
           @commit="transform('position', 'x', $event)" /></label
       ><label
-        >Y 位置<CommitInput
+        >Y 位置<NumberField
           aria-label="图层 Y"
           type="number"
+          :precision="2"
+          step="1"
           :value="layer.transform.position.y"
           :disabled="locked"
           @commit="transform('position', 'y', $event)"
@@ -79,17 +84,19 @@ const source = computed(() =>
     </div>
     <div class="two-fields">
       <label
-        >X 缩放<CommitInput
+        >X 缩放<NumberField
           aria-label="图层缩放 X"
           type="number"
+          :precision="3"
           step="0.1"
           :value="layer.transform.scale.x"
           :disabled="locked"
           @commit="transform('scale', 'x', $event)" /></label
       ><label
-        >Y 缩放<CommitInput
+        >Y 缩放<NumberField
           aria-label="图层缩放 Y"
           type="number"
+          :precision="3"
           step="0.1"
           :value="layer.transform.scale.y"
           :disabled="locked"
@@ -98,16 +105,20 @@ const source = computed(() =>
     </div>
     <div class="two-fields">
       <label
-        >旋转 / 度<CommitInput
+        >旋转 / 度<NumberField
           aria-label="图层旋转"
           type="number"
+          :precision="2"
+          step="1"
           :value="Number(((layer.transform.rotationRad * 180) / Math.PI).toFixed(4))"
           :disabled="locked"
           @commit="transform('rotation', 'x', $event)" /></label
       ><label
-        >不透明度 / %<CommitInput
+        >不透明度 / %<NumberField
           aria-label="图层不透明度"
           type="number"
+          :precision="1"
+          step="1"
           min="0"
           max="100"
           :value="Number((layer.opacity * 100).toFixed(2))"

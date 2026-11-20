@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { Editor } from '../state/editor';
 import type { GameplayEvent } from '../../core/judgement';
-import CommitInput from '../panels/CommitInput.vue';
+import NumberField from '../panels/NumberField.vue';
 const props = defineProps<{ editor: Editor }>(),
   c = props.editor.chart;
 const rules = computed(() => props.editor.project.value.rules);
@@ -119,17 +119,21 @@ function change(field: 'perfect' | 'good' | 'ratio' | 'hold-ratio', value: strin
     <h2>谱面判定</h2>
     <div class="two-fields">
       <label
-        >Perfect ± ms<CommitInput
+        >Perfect ± ms<NumberField
           aria-label="Perfect 窗口"
           type="number"
+          :precision="3"
+          step="1"
           min="0"
           :disabled="disabled"
           :value="rules.hitWindowsUs.perfect / 1000"
           @commit="change('perfect', $event)" /></label
       ><label
-        >Good ± ms<CommitInput
+        >Good ± ms<NumberField
           aria-label="Good 窗口"
           type="number"
+          :precision="3"
+          step="1"
           min="0"
           :disabled="disabled"
           :value="rules.hitWindowsUs.good / 1000"
@@ -137,9 +141,11 @@ function change(field: 'perfect' | 'good' | 'ratio' | 'hold-ratio', value: strin
       /></label>
     </div>
     <label class="stacked-label compact-label"
-      >Slider 完成比例 / %<CommitInput
+      >Slider 完成比例 / %<NumberField
         aria-label="Slider 完成比例"
         type="number"
+        :precision="1"
+        step="1"
         min="0"
         max="100"
         :disabled="disabled"
@@ -149,9 +155,11 @@ function change(field: 'perfect' | 'good' | 'ratio' | 'hold-ratio', value: strin
     <label
       v-if="Object.values(editor.project.value.notes).some((n) => n.kind === 'hold')"
       class="stacked-label compact-label"
-      >长按完成比例 / %<CommitInput
+      >长按完成比例 / %<NumberField
         aria-label="长按完成比例"
         type="number"
+        :precision="1"
+        step="1"
         min="0"
         max="100"
         :disabled="disabled"

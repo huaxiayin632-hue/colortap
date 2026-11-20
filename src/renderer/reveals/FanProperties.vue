@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FanReveal } from '../../shared/models';
 import type { RevealController } from './controller';
-import CommitInput from '../panels/CommitInput.vue';
+import NumberField from '../panels/NumberField.vue';
 
 const props = defineProps<{
   controller: RevealController;
@@ -46,9 +46,10 @@ function center(axis: 'x' | 'y', value: string) {
     </div>
     <div class="two-fields">
       <label
-        >中心 X / %<CommitInput
+        >中心 X / %<NumberField
           aria-label="扇形中心 X"
           type="number"
+          :precision="1"
           min="0"
           max="100"
           step="1"
@@ -57,9 +58,10 @@ function center(axis: 'x' | 'y', value: string) {
           @commit="center('x', $event)"
       /></label>
       <label
-        >中心 Y / %<CommitInput
+        >中心 Y / %<NumberField
           aria-label="扇形中心 Y"
           type="number"
+          :precision="1"
           min="0"
           max="100"
           step="1"
@@ -81,18 +83,20 @@ function center(axis: 'x' | 'y', value: string) {
     </div>
     <div class="two-fields">
       <label
-        >起始角 / 度<CommitInput
+        >起始角 / 度<NumberField
           aria-label="扇形起始角"
           type="number"
+          :precision="2"
           step="1"
           :disabled="disabled"
           :value="degrees(effect.startAngleRad)"
           @commit="controller.patchEffect({ startAngleRad: (Number($event) * Math.PI) / 180 })"
       /></label>
       <label
-        >角度范围 / 度<CommitInput
+        >角度范围 / 度<NumberField
           aria-label="扇形角度范围"
           type="number"
+          :precision="2"
           min="0"
           max="360"
           step="1"

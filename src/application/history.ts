@@ -467,6 +467,7 @@ export class EditHistory {
   private past: Project[] = [];
   private future: Project[] = [];
   private saved: Project;
+  private previewBase: Project | null = null;
   constructor(public current: Project) {
     validateProject(current);
     this.saved = current;
@@ -480,7 +481,20 @@ export class EditHistory {
   get dirty(): boolean {
     return this.current !== this.saved;
   }
+  preview(command: EditCommand | ChartCommand | RevealCommand | ProductionCommand): void {
+    const base = this.previewBase ?? this.current;
+    const next = applyCommand(base, command);
+    this.previewBase = base;
+    this.current = next;
+  }
+  cancelPreview(): void {
+    if (this.previewBase) {
+      this.current = this.previewBase;
+      this.previewBase = null;
+    }
+  }
   execute(command: EditCommand | ChartCommand | RevealCommand | ProductionCommand): void {
+    this.cancelPreview();
     const next = applyCommand(this.current, command);
     if (next === this.current) return;
     this.past.push(this.current);
@@ -488,6 +502,7 @@ export class EditHistory {
     this.future = [];
   }
   undo(): void {
+    this.cancelPreview();
     const previous = this.past.pop();
     if (previous) {
       this.future.push(this.current);
@@ -495,6 +510,7 @@ export class EditHistory {
     }
   }
   redo(): void {
+    this.cancelPreview();
     const next = this.future.pop();
     if (next) {
       this.past.push(this.current);
@@ -502,6 +518,7 @@ export class EditHistory {
     }
   }
   markSaved(): void {
+    this.cancelPreview();
     this.saved = this.current;
   }
 }

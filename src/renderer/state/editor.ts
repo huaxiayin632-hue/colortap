@@ -57,6 +57,9 @@ export function createEditor() {
   const confirmReplacement = shallowRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(
     null,
   );
+  let gestureActive = false;
+  let lastGestureCommand: EditCommand | ChartCommand | RevealCommand | ProductionCommand | null =
+    null;
   let raf = 0,
     sampleTimer: ReturnType<typeof setInterval> | undefined;
   let lastFPS = 0;
@@ -177,26 +180,43 @@ export function createEditor() {
       notify('请先切回编辑模式再修改工程', 'warning');
       return false;
     }
+    const effectiveCommand =
+      command.type === 'delete-layer'
+        ? {
+            ...command,
+            atUs: transport.snapshot().timeUs,
+            sourceOnly: !reveals.audition.value && reveals.override.value === null,
+            revealOverride:
+              reveals.selectedId.value && reveals.override.value !== null
+                ? { clipId: reveals.selectedId.value, progress: reveals.override.value }
+                : null,
+          }
+        : command;
     try {
-      history.execute(
-        command.type === 'delete-layer'
-          ? {
-              ...command,
-              atUs: transport.snapshot().timeUs,
-              sourceOnly: !reveals.audition.value && reveals.override.value === null,
-              revealOverride:
-                reveals.selectedId.value && reveals.override.value !== null
-                  ? { clipId: reveals.selectedId.value, progress: reveals.override.value }
-                  : null,
-            }
-          : command,
-      );
+      if (gestureActive) {
+        history.preview(effectiveCommand);
+        lastGestureCommand = effectiveCommand;
+      } else history.execute(effectiveCommand);
       publish();
       return true;
     } catch (error) {
-      notify(error instanceof Error ? error.message : '输入值无效', 'error');
+      if (!gestureActive) notify(error instanceof Error ? error.message : '输入值无效', 'error');
       return false;
     }
+  }
+  function beginGesture(): void {
+    if (gestureActive) endGesture(false);
+    gestureActive = true;
+    lastGestureCommand = null;
+  }
+  function endGesture(commit: boolean): void {
+    if (!gestureActive) return;
+    gestureActive = false;
+    const command = lastGestureCommand;
+    lastGestureCommand = null;
+    if (commit && command) history.execute(command);
+    else history.cancelPreview();
+    publish();
   }
   async function syncMusic(): Promise<void> {
     if (!session.value) return;
@@ -246,6 +266,7 @@ export function createEditor() {
     }
   }
   async function save(saveAs = false): Promise<boolean> {
+    endGesture(false);
     if (!session.value) return false;
     const result = unwrap(
       await window.desktop.saveProject({
@@ -272,6 +293,7 @@ export function createEditor() {
     return true;
   }
   async function newDocument(name: string, size: Size): Promise<boolean> {
+    endGesture(false);
     return (
       (await run(async () => {
         if (!(await allowReplacement())) return false;
@@ -282,6 +304,7 @@ export function createEditor() {
     );
   }
   async function open(): Promise<void> {
+    endGesture(false);
     await run(async () => {
       if (!(await allowReplacement())) return;
       const next = unwrap(await window.desktop.openProject());
@@ -433,6 +456,7 @@ export function createEditor() {
     }
   }
   async function travel(direction: 'undo' | 'redo'): Promise<void> {
+    endGesture(false);
     if (chart.mode.value !== 'edit') return;
     await run(async () => {
       const oldAssetId = transport.assetId;
@@ -643,6 +667,8 @@ export function createEditor() {
     attachStage,
     notify,
     edit,
+    beginGesture,
+    endGesture,
     newDocument,
     open,
     importMusic,

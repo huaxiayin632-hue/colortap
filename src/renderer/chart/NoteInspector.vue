@@ -5,7 +5,7 @@ import type { Editor } from '../state/editor';
 import type { Note } from '../../shared/models';
 import { ArcPath } from '../../core/path';
 import { noteHead } from '../../core/chart';
-import CommitInput from '../panels/CommitInput.vue';
+import NumberField from '../panels/NumberField.vue';
 const props = defineProps<{ editor: Editor }>();
 const c = props.editor.chart;
 const note = computed(() => c.selectedNote.value),
@@ -98,9 +98,10 @@ function nodeMode(value: string): void {
     </div>
     <template v-if="note">
       <label class="stacked-label"
-        >判定时间 / 秒<CommitInput
+        >判定时间 / 秒<NumberField
           aria-label="音符时间"
           type="number"
+          :precision="6"
           min="0"
           step="0.001"
           :disabled="disabled"
@@ -120,16 +121,20 @@ function nodeMode(value: string): void {
       >
       <div class="two-fields">
         <label
-          >X<CommitInput
+          >X<NumberField
             aria-label="音符 X"
             type="number"
+            :precision="2"
+            step="1"
             :value="Number(head.x.toFixed(3))"
             :disabled="disabled"
             @commit="position('x', $event)" /></label
         ><label
-          >Y<CommitInput
+          >Y<NumberField
             aria-label="音符 Y"
             type="number"
+            :precision="2"
+            step="1"
             :value="Number(head.y.toFixed(3))"
             :disabled="disabled"
             @commit="position('y', $event)"
@@ -137,17 +142,21 @@ function nodeMode(value: string): void {
       </div>
       <div class="two-fields">
         <label
-          >半径<CommitInput
+          >半径<NumberField
             aria-label="音符半径"
             type="number"
+            :precision="2"
+            step="1"
             min="1"
             :value="note.kind !== 'slider' ? note.radius : note.headRadius"
             :disabled="disabled"
             @commit="radius($event)" /></label
         ><label v-if="note.kind === 'slider'"
-          >追踪半径<CommitInput
+          >追踪半径<NumberField
             aria-label="追踪半径"
             type="number"
+            :precision="2"
+            step="1"
             min="1"
             :value="note.followRadius"
             :disabled="disabled"
@@ -165,18 +174,20 @@ function nodeMode(value: string): void {
       <template v-if="note.kind === 'slider' && path">
         <div class="two-fields">
           <label
-            >持续 / 秒<CommitInput
+            >持续 / 秒<NumberField
               aria-label="Slider 持续秒数"
               type="number"
+              :precision="6"
               min="0.001"
               step="0.125"
               :value="Number((c.duration.value / 1000000).toFixed(6))"
               :disabled="disabled"
               @commit="c.setDuration(Number($event))" /></label
           ><label
-            >持续 / 拍<CommitInput
+            >持续 / 拍<NumberField
               aria-label="Slider 持续拍数"
               type="number"
+              :precision="3"
               min="0.001"
               step="0.25"
               :value="
@@ -197,9 +208,10 @@ function nodeMode(value: string): void {
           /></label>
         </div>
         <label class="stacked-label compact-label"
-          >移动速度 / 逻辑单位每秒<CommitInput
+          >移动速度 / 逻辑单位每秒<NumberField
             aria-label="Slider 速度"
             type="number"
+            :precision="3"
             min="1"
             :disabled="disabled"
             :value="Number((length / Math.max(0.000001, c.duration.value / 1000000)).toFixed(3))"
@@ -320,16 +332,20 @@ function nodeMode(value: string): void {
         <template v-if="node">
           <div class="two-fields">
             <label
-              >节点 X<CommitInput
+              >节点 X<NumberField
                 aria-label="节点 X"
                 type="number"
+                :precision="2"
+                step="1"
                 :disabled="disabled"
                 :value="Number(node.point.x.toFixed(3))"
                 @commit="c.editNode('point', 'x', Number($event))" /></label
             ><label
-              >节点 Y<CommitInput
+              >节点 Y<NumberField
                 aria-label="节点 Y"
                 type="number"
+                :precision="2"
+                step="1"
                 :disabled="disabled"
                 :value="Number(node.point.y.toFixed(3))"
                 @commit="c.editNode('point', 'y', Number($event))"
@@ -342,16 +358,20 @@ function nodeMode(value: string): void {
               class="two-fields"
             >
               <label
-                >{{ field === 'handleIn' ? '入柄' : '出柄' }} X<CommitInput
+                >{{ field === 'handleIn' ? '入柄' : '出柄' }} X<NumberField
                   :aria-label="`${field === 'handleIn' ? '入柄' : '出柄'} X`"
                   type="number"
+                  :precision="2"
+                  step="1"
                   :disabled="disabled"
                   :value="Number(node[field].x.toFixed(3))"
                   @commit="c.editNode(field, 'x', Number($event))" /></label
               ><label
-                >Y<CommitInput
+                >Y<NumberField
                   :aria-label="`${field === 'handleIn' ? '入柄' : '出柄'} Y`"
                   type="number"
+                  :precision="2"
+                  step="1"
                   :disabled="disabled"
                   :value="Number(node[field].y.toFixed(3))"
                   @commit="c.editNode(field, 'y', Number($event))"
@@ -383,9 +403,10 @@ function nodeMode(value: string): void {
     </template>
     <template v-else
       ><label class="stacked-label"
-        >批量时间偏移 / 秒<CommitInput
+        >批量时间偏移 / 秒<NumberField
           aria-label="批量时间偏移"
           type="number"
+          :precision="6"
           step="0.125"
           :disabled="disabled"
           :value="0"

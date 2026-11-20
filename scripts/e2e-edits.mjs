@@ -203,6 +203,43 @@ try {
     near(await pixel(200, 160), [20, 120, 160]);
     near(await pixel(150, 195), [130, 105, 50]);
   });
+  await check('拖拽数值框预览只创建一次撤销项，并支持撤销/重做', async () => {
+    await row('半透明组').click();
+    const field = page.getByLabel('图层 X', { exact: true });
+    await page.locator('.inspector-scroll').evaluate((el) => (el.scrollTop = 0));
+    await field.scrollIntoViewIfNeeded();
+    const original = Number(await field.inputValue()),
+      bounds = await field.boundingBox();
+    assert.ok(bounds);
+    assert.equal(
+      await field.evaluate((input, { x, y }) => document.elementFromPoint(x, y) === input, {
+        x: bounds.x + 10,
+        y: bounds.y + bounds.height / 2,
+      }),
+      true,
+    );
+    await field.evaluate((input) => input.blur());
+    await page.mouse.move(bounds.x + 10, bounds.y + bounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + 70, bounds.y + bounds.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await settled();
+    const scrubbed = Number(await field.inputValue());
+    assert.ok(
+      Math.abs(scrubbed - original - 60) < 0.1,
+      `${scrubbed} should be 60 above ${original}`,
+    );
+    await page.keyboard.press('Control+z');
+    await settled();
+    assert.equal(Number(await field.inputValue()), original);
+    await page.keyboard.press('Control+y');
+    await settled();
+    assert.equal(Number(await field.inputValue()), scrubbed);
+    await page.keyboard.press('Control+z');
+    await settled();
+    assert.equal(Number(await field.inputValue()), original);
+    return { original, scrubbed };
+  });
   await check('PNG 图层删除、Ctrl+Z 撤销、重做、Delete 快捷键', async () => {
     await importPicture(fixtures.png);
     await row('透明边缘.png').click();
