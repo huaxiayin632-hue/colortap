@@ -299,6 +299,39 @@ try {
     await page.getByLabel('节拍细分').selectOption('4');
     return { noteIds: circles.map((n) => n.id), moments: circles.map((n) => n.at) };
   });
+  await check('批量时间偏移拖动只应用一次，撤销恢复原时间', async () => {
+    await page.getByRole('button', { name: '全选', exact: true }).click();
+    const field = page.getByLabel('批量时间偏移', { exact: true });
+    await page.locator('.inspector-scroll').evaluate((el) => (el.scrollTop = 0));
+    await field.scrollIntoViewIfNeeded();
+    const before = await Promise.all(
+      circles.map(async (note) => [
+        note.id,
+        Number(await track(note.id).getAttribute('data-time-us')),
+      ]),
+    );
+    const bounds = await field.boundingBox();
+    assert.ok(bounds);
+    assert.equal(
+      await field.evaluate((input, { x, y }) => document.elementFromPoint(x, y) === input, {
+        x: bounds.x + 10,
+        y: bounds.y + bounds.height / 2,
+      }),
+      true,
+    );
+    await field.evaluate((input) => input.blur());
+    await page.mouse.move(bounds.x + 10, bounds.y + bounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + 18, bounds.y + bounds.height / 2, { steps: 4 });
+    await page.mouse.up();
+    await settled();
+    for (const [id, timeUs] of before)
+      assert.equal(Number(await track(id).getAttribute('data-time-us')), timeUs + 1000000);
+    await history();
+    for (const [id, timeUs] of before)
+      assert.equal(Number(await track(id).getAttribute('data-time-us')), timeUs);
+    return { offsetUs: 8 * 125000, before };
+  });
   await check('钢笔连续曲线：拖出切线、点击锚点、完成/取消和单步撤销重做', async () => {
     await jump(5);
     await page.getByRole('button', { name: 'Slider 工具', exact: true }).click();

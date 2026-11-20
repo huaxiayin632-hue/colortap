@@ -137,6 +137,45 @@ describe('document commands and history', () => {
     history.execute({ type: 'set-bpm', bpm: 120 });
     expect(history.canUndo).toBe(false);
   });
+  it('commits multiple previews as a single undoable edit', () => {
+    const original = createProject();
+    const history = new EditHistory(original);
+    history.preview({ type: 'set-bpm', bpm: 130 });
+    history.preview({ type: 'set-bpm', bpm: 140 });
+    history.preview({ type: 'set-bpm', bpm: 150 });
+    history.execute({ type: 'set-bpm', bpm: 150 });
+    expect(history.current.timing.points[0].bpm).toBe(150);
+    history.undo();
+    expect(history.current).toBe(original);
+    expect(history.canUndo).toBe(false);
+  });
+  it('cancels previews back to the identical original project', () => {
+    const original = createProject();
+    const history = new EditHistory(original);
+    history.preview({ type: 'set-bpm', bpm: 130 });
+    history.preview({ type: 'set-bpm', bpm: 140 });
+    history.cancelPreview();
+    expect(history.current).toBe(original);
+  });
+  it('cancels a preview before undoing a committed edit', () => {
+    const original = createProject();
+    const history = new EditHistory(original);
+    history.execute({ type: 'rename', name: '已提交' });
+    history.preview({ type: 'set-bpm', bpm: 140 });
+    history.undo();
+    expect(history.current).toBe(original);
+    expect(history.canRedo).toBe(true);
+  });
+  it('keeps the last successful preview when a later preview is invalid', () => {
+    const original = createProject();
+    const history = new EditHistory(original);
+    history.preview({ type: 'set-bpm', bpm: 140 });
+    const lastGood = history.current;
+    expect(() => history.preview({ type: 'set-bpm', bpm: 0 })).toThrow();
+    expect(history.current).toBe(lastGood);
+    history.cancelPreview();
+    expect(history.current).toBe(original);
+  });
   it('removes the current audio and its cues from serialized data, with complete undo/redo', () => {
     const project = createProject(),
       asset = audio(),

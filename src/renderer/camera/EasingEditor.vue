@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { Easing } from '../../shared/models';
-import CommitInput from '../panels/CommitInput.vue';
+import NumberField from '../panels/NumberField.vue';
 const props = defineProps<{ value: Easing; disabled: boolean }>(),
   emit = defineEmits<{ change: [Easing] }>();
 const draft = ref<[number, number, number, number] | null>(null),
@@ -95,9 +95,10 @@ function up() {
     <div class="two-fields">
       <label v-for="(name, i) in ['X1', 'Y1', 'X2', 'Y2']" :key="name"
         >{{ name
-        }}<CommitInput
+        }}<NumberField
           :aria-label="`镜头缓动${name}`"
           type="number"
+          :precision="3"
           min="0"
           max="1"
           step="0.05"

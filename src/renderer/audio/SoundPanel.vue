@@ -4,6 +4,7 @@ import type { Editor } from '../state/editor';
 import { defaultMixer, type SoundCue, type AudioBus } from '../../shared/models';
 import { soundBus } from '../../core/sound';
 import CommitInput from '../panels/CommitInput.vue';
+import NumberField from '../panels/NumberField.vue';
 const props = defineProps<{ editor: Editor }>();
 const p = computed(() => props.editor.project.value),
   selected = computed(() => p.value.sounds[props.editor.selectedSoundId.value ?? '']);
@@ -215,9 +216,10 @@ function copy() {
         </select></label
       >
       <label v-if="selected.trigger.kind === 'timeline'" class="stacked-label"
-        >时间 / 秒<CommitInput
+        >时间 / 秒<NumberField
           aria-label="音效时间"
           type="number"
+          :precision="6"
           min="0"
           step="0.001"
           :disabled="disabled"
@@ -254,18 +256,22 @@ function copy() {
       >
       <div class="two-fields">
         <label
-          >音量 / %<CommitInput
+          >音量 / %<NumberField
             aria-label="音效音量"
             type="number"
+            :precision="1"
+            step="1"
             min="0"
             max="100"
             :disabled="disabled"
             :value="selected.gain * 100"
             @commit="patch({ gain: Number($event) / 100 })" /></label
         ><label
-          >声像 / %<CommitInput
+          >声像 / %<NumberField
             aria-label="音效声像"
             type="number"
+            :precision="1"
+            step="1"
             min="-100"
             max="100"
             :disabled="disabled"
@@ -274,9 +280,10 @@ function copy() {
         /></label>
       </div>
       <label class="stacked-label"
-        >延迟 / 毫秒<CommitInput
+        >延迟 / 毫秒<NumberField
           aria-label="音效延迟"
           type="number"
+          :precision="3"
           min="0"
           step="1"
           :disabled="disabled"

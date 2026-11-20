@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import type { Editor } from '../state/editor';
 import type { TempoCandidate } from '../../shared/audio-analysis';
 import type { TimingMap } from '../../shared/models';
-import CommitInput from '../panels/CommitInput.vue';
+import NumberField from '../panels/NumberField.vue';
 
 const props = defineProps<{ editor: Editor }>(),
   c = props.editor.chart,
@@ -125,9 +125,11 @@ const labels = {
     </div>
     <div class="two-fields">
       <label
-        >初始 BPM<CommitInput
+        >初始 BPM<NumberField
           aria-label="建议 BPM"
           type="number"
+          :precision="3"
+          :live="false"
           min="0.001"
           step="0.001"
           :disabled="readonly"
@@ -139,9 +141,11 @@ const labels = {
           "
       /></label>
       <label
-        >Offset / 毫秒<CommitInput
+        >Offset / 毫秒<NumberField
           aria-label="建议 Offset"
           type="number"
+          :precision="3"
+          :live="false"
           step="0.001"
           :disabled="readonly"
           :value="offsetMs"
@@ -177,9 +181,10 @@ const labels = {
     <h2>已采用节奏</h2>
     <div v-for="(point, index) in timing.points" :key="point.id" class="tempo-point">
       <label
-        >拍位置（0 起）<CommitInput
+        >拍位置（0 起）<NumberField
           :aria-label="`节奏点 ${index + 1} 拍位置`"
           type="number"
+          :precision="3"
           min="0"
           step="0.001"
           :disabled="readonly || index === 0"
@@ -187,9 +192,10 @@ const labels = {
           @commit="patchPoint(point.id, 'tick', $event)"
       /></label>
       <label
-        >BPM<CommitInput
+        >BPM<NumberField
           :aria-label="`节奏点 ${index + 1} BPM`"
           type="number"
+          :precision="3"
           min="0.001"
           step="0.001"
           :disabled="readonly"
@@ -224,9 +230,11 @@ const labels = {
   <section class="property-section" aria-label="起音对齐">
     <h2>起音对齐</h2>
     <label
-      >搜索范围 / 毫秒<CommitInput
+      >搜索范围 / 毫秒<NumberField
         aria-label="起音吸附范围"
         type="number"
+        :precision="3"
+        :live="false"
         min="0"
         max="500"
         step="1"

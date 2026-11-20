@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { Editor } from '../state/editor';
 import { cameraEnabled } from '../../core/camera';
-import CommitInput from '../panels/CommitInput.vue';
+import NumberField from '../panels/NumberField.vue';
 import EasingEditor from './EasingEditor.vue';
 import { spanUs } from '../../core/chart';
 const props = defineProps<{ editor: Editor }>(),
@@ -103,9 +103,10 @@ function tool(value: 'none' | 'pan' | 'pivot') {
     </div>
     <template v-if="key">
       <label class="stacked-label"
-        >关键帧时间 / 秒<CommitInput
+        >关键帧时间 / 秒<NumberField
           aria-label="镜头关键帧时间"
           type="number"
+          :precision="6"
           min="0"
           step="0.001"
           :disabled="disabled"
@@ -114,47 +115,57 @@ function tool(value: 'none' | 'pan' | 'pivot') {
       /></label>
       <div class="two-fields">
         <label
-          >X<CommitInput
+          >X<NumberField
             aria-label="镜头X"
             type="number"
+            :precision="2"
+            step="1"
             :disabled="disabled"
             :value="key.position.x"
             @commit="position('x', Number($event))" /></label
         ><label
-          >Y<CommitInput
+          >Y<NumberField
             aria-label="镜头Y"
             type="number"
+            :precision="2"
+            step="1"
             :disabled="disabled"
             :value="key.position.y"
             @commit="position('y', Number($event))" /></label
         ><label
-          >缩放<CommitInput
+          >缩放<NumberField
             aria-label="镜头缩放"
             type="number"
+            :precision="3"
             min="0.01"
             step="0.1"
             :disabled="disabled"
             :value="key.zoom"
             @commit="c.patch({ zoom: Number($event) })" /></label
         ><label
-          >旋转 / 度<CommitInput
+          >旋转 / 度<NumberField
             aria-label="镜头旋转"
             type="number"
+            :precision="2"
             step="1"
             :disabled="disabled"
             :value="(key.rotationRad * 180) / Math.PI"
             @commit="c.patch({ rotationRad: (Number($event) * Math.PI) / 180 })" /></label
         ><label
-          >中心 X<CommitInput
+          >中心 X<NumberField
             aria-label="镜头中心X"
             type="number"
+            :precision="2"
+            step="1"
             :disabled="disabled"
             :value="key.pivot?.x ?? p.stage.artworkSize.width / 2"
             @commit="pivot('x', Number($event))" /></label
         ><label
-          >中心 Y<CommitInput
+          >中心 Y<NumberField
             aria-label="镜头中心Y"
             type="number"
+            :precision="2"
+            step="1"
             :disabled="disabled"
             :value="key.pivot?.y ?? p.stage.artworkSize.height / 2"
             @commit="pivot('y', Number($event))"
@@ -187,9 +198,10 @@ function tool(value: 'none' | 'pan' | 'pivot') {
     <template v-if="shake">
       <div class="two-fields">
         <label
-          >时间 / 秒<CommitInput
+          >时间 / 秒<NumberField
             aria-label="震动时间"
             type="number"
+            :precision="6"
             min="0"
             step="0.001"
             :disabled="disabled"
@@ -198,9 +210,10 @@ function tool(value: 'none' | 'pan' | 'pivot') {
               c.patchShake({ at: { basis: 'time', timeUs: Math.round(Number($event) * 1e6) } })
             " /></label
         ><label
-          >时长 / 秒<CommitInput
+          >时长 / 秒<NumberField
             aria-label="震动时长"
             type="number"
+            :precision="6"
             min="0.01"
             step="0.1"
             :disabled="disabled"
@@ -211,34 +224,41 @@ function tool(value: 'none' | 'pan' | 'pivot') {
               })
             " /></label
         ><label
-          >水平幅度<CommitInput
+          >水平幅度<NumberField
             aria-label="震动水平幅度"
             type="number"
+            :precision="2"
+            step="1"
             :disabled="disabled"
             :value="shake.amplitude.x"
             @commit="
               c.patchShake({ amplitude: { ...shake.amplitude, x: Number($event) } })
             " /></label
         ><label
-          >垂直幅度<CommitInput
+          >垂直幅度<NumberField
             aria-label="震动垂直幅度"
             type="number"
+            :precision="2"
+            step="1"
             :disabled="disabled"
             :value="shake.amplitude.y"
             @commit="
               c.patchShake({ amplitude: { ...shake.amplitude, y: Number($event) } })
             " /></label
         ><label
-          >旋转幅度 / 度<CommitInput
+          >旋转幅度 / 度<NumberField
             aria-label="震动旋转幅度"
             type="number"
+            :precision="2"
+            step="1"
             :disabled="disabled"
             :value="(shake.rotationRad * 180) / Math.PI"
             @commit="c.patchShake({ rotationRad: (Number($event) * Math.PI) / 180 })" /></label
         ><label
-          >频率 / Hz<CommitInput
+          >频率 / Hz<NumberField
             aria-label="震动频率"
             type="number"
+            :precision="2"
             min="1"
             :disabled="disabled"
             :value="shake.frequencyHz"
