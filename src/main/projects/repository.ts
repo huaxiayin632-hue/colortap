@@ -93,6 +93,25 @@ export class ProjectRepository {
           continue;
         const target = path.join(root, item.name);
         await checkRealPath(root, target);
+        // Older editors did not acquire the profile lock. Never clean their unmarked
+        // directories, or a marked session whose owner is still alive.
+        try {
+          const marker = path.join(target, '.recovery-session.json');
+          await checkRealPath(target, marker);
+          const owner = z
+            .object({ handle: z.uuid(), pid: z.number().int().positive() })
+            .strict()
+            .parse(JSON.parse(await fs.readFile(marker, 'utf8')));
+          if (owner.handle !== item.name) continue;
+          try {
+            process.kill(owner.pid, 0);
+            continue;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') continue;
+          }
+        } catch {
+          continue;
+        }
         await fs.rm(target, { recursive: true, force: true });
       }
     });
@@ -183,6 +202,11 @@ export class ProjectRepository {
     )
       throw new Error('临时目录实际路径校验失败');
     this.resolvedSessionRoot = actualRoot;
+    await atomicWrite(
+      path.join(staging, '.recovery-session.json'),
+      JSON.stringify({ handle, pid: process.pid }),
+      false,
+    );
     const session: Session = {
       handle,
       projectId: project.id,

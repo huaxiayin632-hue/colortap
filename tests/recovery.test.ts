@@ -199,11 +199,25 @@ describe('recovery storage and session ownership', () => {
     const entry = (await repository.snapshot(session.handle, project, 1))!;
     const abandoned = path.join(root, 'sessions', randomUUID());
     await fs.mkdir(abandoned);
+    await fs.writeFile(
+      path.join(abandoned, '.recovery-session.json'),
+      JSON.stringify({ handle: path.basename(abandoned), pid: 2147483647 }),
+    );
+    const legacy = path.join(root, 'sessions', randomUUID());
+    await fs.mkdir(legacy);
+    const live = path.join(root, 'sessions', randomUUID());
+    await fs.mkdir(live);
+    await fs.writeFile(
+      path.join(live, '.recovery-session.json'),
+      JSON.stringify({ handle: path.basename(live), pid: process.pid }),
+    );
     const unrelated = path.join(root, 'sessions', 'keep');
     await fs.mkdir(unrelated);
     await repository.cleanupAbandonedSessions();
     await expect(fs.stat(abandoned)).rejects.toThrow();
     expect(await fs.stat(unrelated)).toBeTruthy();
+    expect(await fs.stat(legacy)).toBeTruthy();
+    expect(await fs.stat(live)).toBeTruthy();
     expect(await fs.stat(path.join(root, 'sessions', session.handle))).toBeTruthy();
     expect((await repository.listRecoveries()).entries).toEqual([entry]);
   });
