@@ -13,6 +13,11 @@ import {
   type Shortcut,
 } from './context';
 
+export interface TimelineCommands {
+  canNavigate(): boolean;
+  reveal(timeUs: number): void;
+  locate(): void;
+}
 export interface Command {
   id: string;
   name: string;
@@ -28,6 +33,7 @@ export function createCommands(
   newProject: () => void,
 ) {
   const help = ref(false);
+  const timeline = shallowRef<TimelineCommands | null>(null);
   const menu = shallowRef<{
     x: number;
     y: number;
@@ -315,6 +321,49 @@ export function createCommands(
     () => available() && editor.playback.value.ready,
     () => editor.seek(0),
   );
+  for (const [direction, key, word] of [
+    [-1, 'ArrowLeft', '上一'],
+    [1, 'ArrowRight', '下一'],
+  ] as const) {
+    for (const bars of [false, true]) {
+      add(
+        `timeline.${bars ? 'bar' : 'grid'}.${direction}`,
+        `${word}${bars ? '小节边界' : '细分网格点'}`,
+        '时间轴获得焦点，未拖动对象或播放头',
+        [{ key, ctrl: bars }],
+        () => available() && editor.playback.value.ready && Boolean(timeline.value?.canNavigate()),
+        () => {
+          const { timeUs, durationUs } = editor.playback.value;
+          const destination = bars
+            ? editor.tempo.value.nextBar(timeUs, direction)
+            : editor.tempo.value.nextGrid(timeUs, c.divisions.value, direction);
+          const next = Math.max(0, Math.min(durationUs, destination));
+          editor.seek(next);
+          timeline.value?.reveal(next);
+        },
+        (event) =>
+          event.target instanceof Element && Boolean(event.target.closest('.timeline-scroll')),
+      );
+    }
+  }
+  add(
+    'timeline.locate',
+    '定位播放头',
+    '时间轴视图；恢复已启用的跟随',
+    [],
+    () => available() && Boolean(timeline.value),
+    () => timeline.value?.locate(),
+  );
+  add('timeline.follow', '开启 / 关闭播放头跟随', '时间轴视图', [], available, () => {
+    workspace.timeline.value.follow = !workspace.timeline.value.follow;
+  });
+  for (const [ruler, name] of [
+    ['time', '分:秒'],
+    ['bars', '小节:拍'],
+  ] as const)
+    add('timeline.ruler.' + ruler, name + '标尺', '时间轴视图', [], available, () => {
+      workspace.timeline.value.ruler = ruler;
+    });
   add('help', '快捷键一览', '编辑器', [plain('?')], available, () => {
     editor.chart.release();
     help.value = true;
@@ -584,6 +633,8 @@ export function createCommands(
   });
   return {
     commands,
+    timeline,
+    timelinePreferences: workspace.timeline,
     byId,
     enabled,
     run,

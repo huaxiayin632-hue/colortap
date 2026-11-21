@@ -161,6 +161,28 @@ describe('one command entry and explicit operation target', () => {
     key('x');
     expect(input).toHaveBeenCalledTimes(1);
   });
+  it('routes timeline navigation through editor.seek, clamps boundaries and blocks active gestures', () => {
+    const seek = vi.spyOn(editor, 'seek').mockImplementation(() => {});
+    let interactive = false;
+    commands.timeline.value = { canNavigate: () => !interactive, reveal: vi.fn(), locate: vi.fn() };
+    editor.playback.value = {
+      ...editor.playback.value,
+      ready: true,
+      timeUs: 400000,
+      durationUs: 800000,
+    };
+    editor.chart.divisions.value = 3;
+    commands.run('timeline.grid.1');
+    expect(seek).toHaveBeenLastCalledWith(500000);
+    commands.run('timeline.bar.1');
+    expect(seek).toHaveBeenLastCalledWith(800000);
+    commands.run('timeline.bar.-1');
+    expect(seek).toHaveBeenLastCalledWith(0);
+    interactive = true;
+    expect(commands.run('timeline.grid.1')).toBe(false);
+    expect(seek).toHaveBeenCalledTimes(3);
+    expect(editor.dirty.value).toBe(false);
+  });
   it('keeps command ids and registered key combinations unambiguous', () => {
     expect(new Set(commands.commands.map((c) => c.id)).size).toBe(commands.commands.length);
     const keys = commands.commands.flatMap((c) => c.shortcuts.map((s) => JSON.stringify(s)));
