@@ -52,6 +52,121 @@ describe('TempoMap', () => {
   });
 });
 
+describe('meter-aware timeline navigation', () => {
+  function map(meter: [number, number] = [4, 4], offset = 0, bpm = 120) {
+    const timing = createProject().timing;
+    timing.beatZeroUs = offset;
+    Object.assign(timing.points[0], { meter, bpm });
+    return timing;
+  }
+  it.each([
+    [3, 4, 2880],
+    [6, 8, 2880],
+    [7, 8, 3360],
+    [5, 16, 1200],
+  ])('uses numerator and denominator for %s/%s measure boundaries', (n, d, length) => {
+    const tempo = new TempoMap(map([n, d]));
+    expect(tempo.barBeat(tempo.tickToTime(3840 / d))).toEqual({ bar: 1, beat: 2 });
+    expect(tempo.barBeat(tempo.tickToTime(length))).toEqual({ bar: 2, beat: 1 });
+    expect(tempo.nextBar(0, 1)).toBe(tempo.tickToTime(length));
+    expect(tempo.nextBar(tempo.tickToTime(length), -1)).toBe(0);
+    expect(
+      tempo
+        .grid(0, tempo.tickToTime(length * 2), 3, 0)
+        .filter((l) => l.major)
+        .map((l) => l.tick),
+    ).toEqual([0, length, length * 2]);
+  });
+  it('extends the first meter before beat zero, including bar zero and negative bars', () => {
+    const tempo = new TempoMap(map([3, 4], 2000000));
+    expect(tempo.barBeat(0)).toEqual({ bar: -1, beat: 3 });
+    expect(tempo.barBeat(500000)).toEqual({ bar: 0, beat: 1 });
+    expect(tempo.barBeat(2000000)).toEqual({ bar: 1, beat: 1 });
+    expect(tempo.nextBar(0, 1)).toBe(500000);
+    expect(tempo.grid(0, 1500000, 3, 0).some((l) => l.tick === -2880 && l.major)).toBe(true);
+    expect(tempo.barMarks(0, 1500000, 0).map((l) => `${l.bar}:${l.beat}`)).toEqual([
+      '-1:3',
+      '0:1',
+      '0:2',
+      '0:3',
+    ]);
+  });
+  it('keeps bars through BPM-only changes and starts a new bar at a meter change', () => {
+    const timing = map();
+    timing.points.push(
+      { id: 'tempo', tick: 960, bpm: 137.3, meter: [4, 4] },
+      { id: 'meter', tick: 4800, bpm: 137.3, meter: [6, 8] },
+      { id: 'tempo2', tick: 5760, bpm: 190, meter: [6, 8] },
+    );
+    const tempo = new TempoMap(timing),
+      changed = tempo.tickToTime(4800);
+    expect(tempo.barBeat(tempo.tickToTime(3840))).toEqual({ bar: 2, beat: 1 });
+    expect(tempo.barBeat(changed)).toEqual({ bar: 3, beat: 1 });
+    expect(tempo.nextBar(changed, -1)).toBe(tempo.tickToTime(3840));
+    expect(tempo.nextBar(tempo.tickToTime(3840), 1)).toBe(changed);
+    expect(tempo.nextBar(changed, 1)).toBe(tempo.tickToTime(7680));
+    expect(tempo.barBeat(tempo.tickToTime(5760))).toEqual({ bar: 3, beat: 3 });
+  });
+  it.each([3, 6, 12])(
+    'steps on and off the 1/%s grid without sticking after microsecond rounding',
+    (divisions) => {
+      const timing = map([4, 4], -123456, 137.3);
+      timing.points.push({ id: 'tempo', tick: 3840, bpm: 193.7, meter: [4, 4] });
+      const tempo = new TempoMap(timing),
+        q = 960 / divisions;
+      for (const index of [-10, 0, 1, 2, 47, 48, 49, 100, 40000]) {
+        const here = tempo.tickToTime(index * q),
+          previous = tempo.tickToTime((index - 1) * q),
+          next = tempo.tickToTime((index + 1) * q);
+        expect(tempo.nextGrid(here, divisions, -1)).toBe(previous);
+        expect(tempo.nextGrid(here, divisions, 1)).toBe(next);
+        expect(tempo.nextGrid(here + 1, divisions, -1)).toBe(here);
+        expect(tempo.nextGrid(here - 1, divisions, 1)).toBe(here);
+        expect(tempo.snap(here, divisions)).toBe(here);
+      }
+    },
+  );
+  it('treats rounded bar boundaries as exact in both labels and navigation', () => {
+    const tempo = new TempoMap(map([7, 8], 321987, 137.3));
+    for (const i of [-20, -1, 0, 1, 17, 10000]) {
+      const time = tempo.tickToTime(i * 3360);
+      expect(tempo.barBeat(time)).toEqual({ bar: i + 1, beat: 1 });
+      expect(tempo.nextBar(time, 1)).toBe(tempo.tickToTime((i + 1) * 3360));
+      expect(tempo.nextBar(time, -1)).toBe(tempo.tickToTime((i - 1) * 3360));
+      expect(tempo.nextBar(time + 1, -1)).toBe(time);
+      expect(tempo.nextBar(time - 1, 1)).toBe(time);
+    }
+  });
+  it('counts non-binary meter denominators without floating point phantom bars', () => {
+    const timing = map([1, 13]);
+    timing.points.push({ id: 'change', tick: 3840, bpm: 120, meter: [4, 4] });
+    const tempo = new TempoMap(timing);
+    expect(tempo.barBeat(2000000)).toEqual({ bar: 14, beat: 1 });
+    expect(tempo.nextBar(2000000, -1)).toBe(1846154);
+  });
+  it.each([123.45, 137.3])(
+    'keeps rounded measure marks at both inclusive viewport edges at %s BPM',
+    (bpm) => {
+      const tempo = new TempoMap(map([4, 4], 250000, bpm));
+      const boundary = tempo.tickToTime(3840);
+      for (const [start, end] of [
+        [boundary, boundary],
+        [boundary, boundary + 1],
+        [boundary - 1, boundary],
+      ]) {
+        expect(tempo.barMarks(start, end, 0).map((line) => line.tick)).toEqual([3840]);
+        expect(tempo.grid(start, end, 12, 0).map((line) => line.tick)).toEqual([3840]);
+      }
+    },
+  );
+  it('bounds visual grid generation at wide zoom without changing snap positions', () => {
+    const tempo = new TempoMap(map([6, 8], 250000, 137.3));
+    expect(tempo.grid(0, 3600e6, 12, 1e6).length).toBeLessThan(8000);
+    expect(tempo.barMarks(0, 3600e6, 10e6).length).toBeLessThan(400);
+    expect(tempo.snap(400000, 12)).toBe(tempo.tickToTime(320));
+  });
+});
+
 describe('AnchoredClock', () => {
   it('derives position directly from the audio clock, without frame stepping', () => {
     const clock = new AnchoredClock();

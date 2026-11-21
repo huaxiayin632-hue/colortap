@@ -8,14 +8,19 @@ import {
   type PresetId,
 } from './layout';
 
+import { readTimelinePreferences, timelinePreferenceKey } from '../timeline/preferences';
+
 export function useWorkspace() {
-  let stored: string | null = null;
+  let stored: string | null = null,
+    storedTimeline: string | null = null;
   try {
     stored = localStorage.getItem(layoutKey);
+    storedTimeline = localStorage.getItem(timelinePreferenceKey);
   } catch {
     /* Use defaults if storage is unavailable. */
   }
   const layout = ref(readLayout(stored));
+  const timeline = ref(readTimelinePreferences(storedTimeline));
   const focus = ref(false);
   const storageError = ref(false);
   const viewport = ref({ width: window.innerWidth, height: window.innerHeight });
@@ -28,6 +33,7 @@ export function useWorkspace() {
   function persist() {
     try {
       localStorage.setItem(layoutKey, JSON.stringify(layout.value));
+      localStorage.setItem(timelinePreferenceKey, JSON.stringify(timeline.value));
       storageError.value = false;
     } catch {
       storageError.value = true;
@@ -36,7 +42,7 @@ export function useWorkspace() {
   // Coalesce pointer moves, and flush when the window closes.
   let timer: ReturnType<typeof setTimeout> | undefined;
   watch(
-    layout,
+    [layout, timeline],
     () => {
       clearTimeout(timer);
       timer = setTimeout(persist, 150);
@@ -82,5 +88,16 @@ export function useWorkspace() {
           size.value[id === 'left' ? 'rightHandle' : 'leftHandle'];
     layout.value[id] = Math.max(min, Math.min(1200, max, value));
   }
-  return { layout, size, focus, storageError, toggle, preset, setSize, beginResize, endResize };
+  return {
+    layout,
+    timeline,
+    size,
+    focus,
+    storageError,
+    toggle,
+    preset,
+    setSize,
+    beginResize,
+    endResize,
+  };
 }

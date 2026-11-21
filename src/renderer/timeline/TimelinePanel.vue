@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useCommands } from '../commands/registry';
 import type { Editor } from '../state/editor';
 import { formatTime } from '../../core/timing';
 import { onsetIndex, type SnapMode } from '../../core/note-alignment';
@@ -14,7 +15,15 @@ const emit = defineEmits<{ collapse: [] }>();
 const props = defineProps<{ editor: Editor }>();
 const scroller = ref<HTMLDivElement>();
 const labelScroller = ref<HTMLElement>();
-const pixelsPerSecond = ref(44);
+const commands = useCommands();
+const preferences = commands.timelinePreferences;
+const pixelsPerSecond = computed(() => preferences.value.zoom);
+const suspended = ref(false),
+  interacting = ref(false);
+let expectedScroll = 0;
+function suspendFollow() {
+  suspended.value = true;
+}
 const divisions = props.editor.chart.divisions;
 const scrollLeft = ref(0),
   visibleWidth = ref(1000);
@@ -28,10 +37,15 @@ const rowHeights = ref<Record<TrackId, number>>({
 });
 function syncScroll(event: Event, fromLabels = false) {
   const source = event.target as HTMLElement;
+  if (!source.clientWidth) return;
   const target = fromLabels ? scroller.value : labelScroller.value;
   if (target && Math.abs(target.scrollTop - source.scrollTop) > 0.5)
     target.scrollTop = source.scrollTop;
-  if (!fromLabels) scrollLeft.value = source.scrollLeft;
+  if (!fromLabels) {
+    if (Math.abs(source.scrollLeft - expectedScroll) > 1) suspendFollow();
+    scrollLeft.value = source.scrollLeft;
+    expectedScroll = source.scrollLeft;
+  }
 }
 const layout = computed(() => props.editor.project.value.tracks ?? defaultTracks());
 const labels: Record<TrackId, string> = {
@@ -77,14 +91,30 @@ const contentWidth = computed(() =>
 const headX = computed(
   () => (props.editor.playback.value.timeUs / 1_000_000) * pixelsPerSecond.value,
 );
-const beat = computed(
-  () => props.editor.tempo.value.timeToTick(props.editor.playback.value.timeUs) / 960,
-);
 const beatLabel = computed(() => {
-  const count = Math.max(0, Math.floor(beat.value));
-  return `${Math.floor(count / 4) + 1} : ${(count % 4) + 1}`;
+  const position = props.editor.tempo.value.barBeat(props.editor.playback.value.timeUs);
+  return `${position.bar} : ${position.beat}`;
 });
 const marks = computed(() => {
+  if (preferences.value.ruler === 'bars') {
+    const lines = props.editor.tempo.value.barMarks(
+      (scrollLeft.value / pixelsPerSecond.value) * 1e6,
+      ((scrollLeft.value + visibleWidth.value) / pixelsPerSecond.value) * 1e6,
+      75e6 / pixelsPerSecond.value,
+    );
+    let lastX = -Infinity;
+    return lines
+      .filter((line) => {
+        const x = (line.timeUs / 1e6) * pixelsPerSecond.value;
+        if (x - lastX < 70) return false;
+        lastX = x;
+        return true;
+      })
+      .map((line) => ({
+        x: (line.timeUs / 1e6) * pixelsPerSecond.value,
+        label: `${line.bar}:${line.beat}`,
+      }));
+  }
   const step =
     [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1800, 3600].find(
       (value) => value * pixelsPerSecond.value >= 70,
@@ -140,7 +170,7 @@ function seekAt(event: PointerEvent): void {
   props.editor.seek(timeUs);
 }
 function down(event: PointerEvent): void {
-  if (event.button !== 0 || !props.editor.playback.value.ready) return;
+  if (event.button !== 0 || isScrollbar(event) || !props.editor.playback.value.ready) return;
   scrubbing = { pointerId: event.pointerId, resume: props.editor.playback.value.playing };
   props.editor.pause();
   scroller.value?.setPointerCapture(event.pointerId);
@@ -149,41 +179,183 @@ function down(event: PointerEvent): void {
 function move(event: PointerEvent): void {
   if (scrubbing?.pointerId === event.pointerId) seekAt(event);
 }
-function up(event: PointerEvent): void {
+function up(event: PointerEvent, cancelled = false): void {
   if (scrubbing?.pointerId !== event.pointerId) return;
   const resume = scrubbing.resume;
   scrubbing = null;
   if (scroller.value?.hasPointerCapture(event.pointerId))
     scroller.value.releasePointerCapture(event.pointerId);
-  if (resume) void props.editor.togglePlay();
+  if (resume && !cancelled) void props.editor.togglePlay();
 }
-async function zoomAtHead(value: number): Promise<void> {
-  if (!scroller.value) return;
-  const anchorSeconds =
-    (scroller.value.scrollLeft + visibleWidth.value / 2) / pixelsPerSecond.value;
-  pixelsPerSecond.value = value;
+function setScroll(left: number) {
+  const el = scroller.value;
+  if (!el || !el.clientWidth) return;
+  el.scrollLeft = Math.max(0, Math.min(Math.max(0, el.scrollWidth - el.clientWidth), left));
+  expectedScroll = scrollLeft.value = el.scrollLeft;
+}
+async function zoomAt(value: number, anchorX = visibleWidth.value / 2) {
+  const el = scroller.value;
+  if (!el || !el.clientWidth) return;
+  suspendFollow();
+  const seconds = (el.scrollLeft + anchorX) / pixelsPerSecond.value;
+  preferences.value.zoom = Math.max(8, Math.min(200, value));
   await nextTick();
-  scroller.value.scrollLeft = Math.max(0, anchorSeconds * value - visibleWidth.value / 2);
+  setScroll(seconds * pixelsPerSecond.value - anchorX);
 }
-function jumpToHead(): void {
-  if (scroller.value) scroller.value.scrollLeft = Math.max(0, headX.value - visibleWidth.value / 3);
+function wheel(event: WheelEvent) {
+  if (interacting.value) {
+    if (event.ctrlKey || event.shiftKey) event.preventDefault();
+    return;
+  }
+  const el = scroller.value;
+  if (!el || !el.clientWidth) return;
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientWidth : 1;
+  if (event.ctrlKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    const anchor = Math.max(
+      0,
+      Math.min(el.clientWidth, event.clientX - el.getBoundingClientRect().left),
+    );
+    void zoomAt(pixelsPerSecond.value * Math.exp(-event.deltaY * unit * 0.002), anchor);
+  } else if (event.shiftKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    suspendFollow();
+    setScroll(
+      el.scrollLeft +
+        (Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY) * unit,
+    );
+  } else if (event.deltaX || event.deltaY) suspendFollow();
 }
+let pan: { pointerId: number; x: number; left: number } | null = null;
+function isScrollbar(event: MouseEvent) {
+  const el = scroller.value;
+  if (!el) return false;
+  const box = el.getBoundingClientRect();
+  return event.clientX >= box.left + el.clientWidth || event.clientY >= box.top + el.clientHeight;
+}
+function pointerHeld() {
+  interacting.value = true;
+}
+function pointerStart(event: PointerEvent) {
+  if (event.button !== 0 && event.button !== 1) return;
+  scroller.value?.focus({ preventScroll: true });
+  interacting.value = true;
+  if (event.button === 1) {
+    event.preventDefault();
+    event.stopPropagation();
+    suspendFollow();
+    pan = { pointerId: event.pointerId, x: event.clientX, left: scroller.value!.scrollLeft };
+    scroller.value!.setPointerCapture(event.pointerId);
+  } else if (isScrollbar(event)) suspendFollow();
+}
+function pointerMove(event: PointerEvent) {
+  if (pan?.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  setScroll(pan.left - (event.clientX - pan.x));
+}
+function endPan(event?: PointerEvent) {
+  if (event && pan && pan.pointerId !== event.pointerId) return;
+  const id = pan?.pointerId;
+  pan = null;
+  interacting.value = false;
+  if (id !== undefined && scroller.value?.hasPointerCapture(id))
+    scroller.value.releasePointerCapture(id);
+}
+function lostCapture(event: PointerEvent) {
+  endPan(event);
+  if (scrubbing?.pointerId === event.pointerId) up(event, true);
+}
+function blur() {
+  endPan();
+  if (scrubbing) {
+    const id = scrubbing.pointerId;
+    scrubbing = null;
+    if (scroller.value?.hasPointerCapture(id)) scroller.value.releasePointerCapture(id);
+  }
+}
+function reveal(timeUs: number) {
+  const el = scroller.value;
+  if (!el?.clientWidth) return;
+  const x = (timeUs / 1e6) * pixelsPerSecond.value;
+  const page = Math.max(1, el.clientWidth - 32);
+  if (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - 20)
+    setScroll(Math.floor(x / page) * page);
+}
+function jumpToHead() {
+  suspended.value = false;
+  setScroll(headX.value - visibleWidth.value / 3);
+}
+watch(
+  () => preferences.value.follow,
+  () => {
+    suspended.value = false;
+    if (preferences.value.follow) reveal(props.editor.playback.value.timeUs);
+  },
+);
+watch([headX, visibleWidth, () => props.editor.playback.value.playing], () => {
+  if (
+    preferences.value.follow &&
+    !suspended.value &&
+    !interacting.value &&
+    props.editor.playback.value.playing
+  )
+    reveal(props.editor.playback.value.timeUs);
+});
+watch(
+  () => props.editor.project.value.id,
+  async () => {
+    blur();
+    suspended.value = false;
+    await nextTick();
+    setScroll(0);
+  },
+);
+watch(contentWidth, async () => {
+  await nextTick();
+  setScroll(scrollLeft.value);
+});
 let observer: ResizeObserver | null = null;
 onMounted(() => {
+  commands.timeline.value = {
+    canNavigate: () =>
+      !interacting.value && !scrubbing && !pan && Boolean(scroller.value?.clientWidth),
+    reveal,
+    locate: jumpToHead,
+  };
   observer = new ResizeObserver(() => {
-    // Hidden panels retain their viewport and scroll state until they become visible again.
-    if (scroller.value?.clientWidth) visibleWidth.value = scroller.value.clientWidth;
+    // Hidden panels retain their viewport until they become visible again.
+    if (scroller.value?.clientWidth) {
+      visibleWidth.value = scroller.value.clientWidth;
+      setScroll(scrollLeft.value);
+    }
   });
   if (scroller.value) observer.observe(scroller.value);
+  window.addEventListener('pointerdown', pointerHeld, true);
+  window.addEventListener('pointerup', endPan, true);
+  window.addEventListener('pointercancel', endPan, true);
+  window.addEventListener('blur', blur);
 });
-onBeforeUnmount(() => observer?.disconnect());
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  blur();
+  commands.timeline.value = null;
+  window.removeEventListener('pointerdown', pointerHeld, true);
+  window.removeEventListener('pointerup', endPan, true);
+  window.removeEventListener('pointercancel', endPan, true);
+  window.removeEventListener('blur', blur);
+});
 </script>
 
 <template>
   <section class="timeline-panel" aria-label="时间轴">
     <header class="timeline-toolbar">
       <button aria-label="收起时间轴" @click="emit('collapse')">▾</button><strong>时间轴</strong
-      ><span class="beat-readout">第 {{ beatLabel }} 拍</span>
+      ><span class="beat-readout" title="小节 : 拍；首拍前向前延伸编号，拍号变化另起小节">{{
+        beatLabel
+      }}</span>
       <label
         >音符吸附
         <select
@@ -204,8 +376,31 @@ onBeforeUnmount(() => observer?.disconnect());
         <option :value="4">1/16 音符 · 1/4 拍</option>
         <option :value="8">1/32 音符 · 1/8 拍</option>
         <option :value="16">1/64 音符 · 1/16 拍</option>
+        <option :value="3">1/3 拍</option>
+        <option :value="6">1/6 拍</option>
+        <option :value="12">1/12 拍</option>
       </select>
-      <span class="toolbar-spacer" /><button @click="jumpToHead">定位播放头</button
+      <label
+        >标尺<select
+          aria-label="时间标尺"
+          :value="preferences.ruler"
+          @change="commands.run('timeline.ruler.' + ($event.target as HTMLSelectElement).value)"
+        >
+          <option value="time">分:秒</option>
+          <option value="bars">小节:拍</option>
+        </select></label
+      >
+      <span class="toolbar-spacer" />
+      <button
+        aria-label="播放头跟随"
+        :aria-pressed="preferences.follow"
+        :data-follow-state="!preferences.follow ? 'off' : suspended ? 'paused' : 'on'"
+        title="翻页跟随；手动浏览后暂停，定位播放头或重新开启可恢复"
+        @click="commands.run('timeline.follow')"
+      >
+        {{ !preferences.follow ? '跟随关闭' : suspended ? '跟随已暂停' : '跟随开启' }}
+      </button>
+      <button @click="commands.run('timeline.locate')">定位播放头</button
       ><label class="timeline-zoom"
         >时间缩放<input
           aria-label="时间轴缩放"
@@ -213,12 +408,12 @@ onBeforeUnmount(() => observer?.disconnect());
           min="8"
           max="200"
           :value="pixelsPerSecond"
-          @input="zoomAtHead(Number(($event.target as HTMLInputElement).value))"
+          @input="zoomAt(Number(($event.target as HTMLInputElement).value))"
       /></label>
     </header>
-    <div class="timeline-tracks production-tracks">
+    <div class="timeline-tracks production-tracks" @wheel.capture="wheel">
       <div class="track-labels">
-        <div class="ruler-label">分 : 秒</div>
+        <div class="ruler-label">{{ preferences.ruler === 'time' ? '分 : 秒' : '小节 : 拍' }}</div>
         <section
           ref="labelScroller"
           class="track-labels-viewport"
@@ -273,11 +468,20 @@ onBeforeUnmount(() => observer?.disconnect());
         ref="scroller"
         class="timeline-scroll"
         data-testid="timeline-scroll"
+        tabindex="0"
+        aria-label="时间轴导航"
+        :data-zoom="pixelsPerSecond"
+        :data-scroll-left="scrollLeft"
+        :data-ruler="preferences.ruler"
+        @pointerdown.capture="pointerStart"
+        @pointermove.capture="pointerMove"
+        @lostpointercapture.capture="lostCapture"
+        @auxclick.middle.prevent
         @scroll="syncScroll($event)"
         @pointerdown="down"
         @pointermove="move"
         @pointerup="up"
-        @pointercancel="up"
+        @pointercancel="up($event, true)"
       >
         <div
           class="timeline-content"
@@ -382,3 +586,22 @@ onBeforeUnmount(() => observer?.disconnect());
     </div>
   </section>
 </template>
+
+<style>
+.timeline-toolbar {
+  height: auto;
+  min-height: 39px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 4px 10px;
+}
+.timeline-toolbar button[aria-pressed='true'] {
+  background: #3b5a64;
+  color: #ddf6fc;
+}
+.timeline-scroll:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
+}
+</style>
