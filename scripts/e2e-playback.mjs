@@ -153,6 +153,7 @@ function observeAudio() {
       connect.call(this, state.mix);
       const analyser = this.context.createAnalyser();
       analyser.fftSize = 8192;
+      analyser.smoothingTimeConstant = 0;
       connect.call(this, analyser);
       state.roots.push(analyser);
     }
@@ -377,7 +378,10 @@ try {
         await pause();
       }
       const hz = evidence[0].spectrum.hz;
-      assert.ok(evidence.every((v) => Math.abs(v.spectrum.hz / hz - v.rate) < 0.04));
+      assert.ok(
+        evidence.every((v) => Math.abs(v.spectrum.hz / hz - v.rate) < 0.04),
+        JSON.stringify(evidence),
+      );
       return evidence;
     },
   );
