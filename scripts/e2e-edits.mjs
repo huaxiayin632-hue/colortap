@@ -271,9 +271,12 @@ try {
   await check('删除分组保护锁定子层，并可一次撤销/重做整个嵌套树', async () => {
     await page.getByLabel('锁定 蓝色', { exact: true }).click();
     await row('半透明组').click();
-    await page.getByRole('button', { name: '删除选中图层或分组', exact: true }).click();
+    assert.equal(
+      await page.getByRole('button', { name: '删除选中图层或分组', exact: true }).isEnabled(),
+      false,
+    );
+    await page.keyboard.press('Delete');
     assert.equal(await page.getByRole('treeitem').count(), 6);
-    assert.match(await page.locator('.status-message').textContent(), /先解锁/);
     await page.getByLabel('解锁 蓝色', { exact: true }).click();
     await row('半透明组').click();
     await page.getByRole('button', { name: '删除选中图层或分组', exact: true }).click();

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useCommands } from '../commands/registry';
+const commands = useCommands();
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Editor } from '../state/editor';
 import { EditorStage } from '../canvas/stage';
@@ -52,13 +54,29 @@ onBeforeUnmount(() => stage?.dispose());
             "
           />完整素材</label
         >
-        <button aria-label="缩小画布" @click="editor.setZoom(editor.zoom.value / 1.25)">−</button>
+        <button
+          aria-label="缩小画布"
+          @click="commands.run('view.out')"
+          :disabled="!commands.enabled('view.out')"
+        >
+          −
+        </button>
         <span class="zoom-value" data-testid="zoom-value"
           >{{ (editor.zoom.value * 100).toFixed(1) }}%</span
         >
-        <button aria-label="放大画布" @click="editor.setZoom(editor.zoom.value * 1.25)">+</button>
-        <button @click="editor.fit()">适合窗口</button>
-        <button @click="editor.setZoom(1)">原尺寸</button>
+        <button
+          aria-label="放大画布"
+          @click="commands.run('view.in')"
+          :disabled="!commands.enabled('view.in')"
+        >
+          +
+        </button>
+        <button @click="commands.run('view.fit')" :disabled="!commands.enabled('view.fit')">
+          适合窗口
+        </button>
+        <button @click="commands.run('view.actual')" :disabled="!commands.enabled('view.actual')">
+          原尺寸
+        </button>
       </div>
     </header>
     <ChartToolbar :editor="editor" />

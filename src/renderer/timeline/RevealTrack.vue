@@ -88,7 +88,9 @@ const height = computed(() =>
 );
 watchEffect(() => emit('resize', height.value));
 function down(event: PointerEvent, id: string, duration = false, stage: Stage = 'effect') {
+  if (event.button !== 0) return;
   event.preventDefault();
+  (event.currentTarget as HTMLElement).focus({ preventScroll: true });
   r.choose(id);
   const clip = props.editor.project.value.reveals[id],
     stages = outlineStages(props.editor.project.value, clip),
@@ -200,9 +202,11 @@ function up(event: PointerEvent, cancelled = false) {
         @pointermove.stop="move"
         @pointerup.stop="up($event)"
         @pointercancel.stop="up($event, true)"
-        @keydown.enter="
-          r.choose(entry.clip.id);
-          editor.seek(entry.start);
+        @click="
+          if ($event.detail === 0) {
+            r.choose(entry.clip.id);
+            editor.seek(entry.start);
+          }
         "
       >
         {{ editor.project.value.layers[entry.clip.layerId]?.name }} ·

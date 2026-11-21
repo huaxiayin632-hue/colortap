@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useCommands } from '../commands/registry';
+const commands = useCommands();
 import { computed } from 'vue';
 import type { Editor } from '../state/editor';
 import { defaultMixer, type SoundCue, type AudioBus } from '../../shared/models';
@@ -106,18 +108,12 @@ function create(kind: 'time' | 'note' | 'reveal') {
     bus: kind === 'note' ? 'hit' : 'animation',
     enabled: true,
   };
-  if (props.editor.edit({ type: 'put-sound', cue })) props.editor.selectedSoundId.value = cue.id;
+  if (props.editor.edit({ type: 'put-sound', cue })) props.editor.selectSound(cue.id);
 }
 function mix(bus: AudioBus, field: 'gain' | 'muted', value: number | boolean) {
   const next = structuredClone(mixer.value);
   Object.assign(next[bus], { [field]: value });
   props.editor.edit({ type: 'set-mixer', mixer: next });
-}
-function remove() {
-  if (selected.value) props.editor.edit({ type: 'delete-sound', id: selected.value.id });
-}
-function copy() {
-  if (selected.value) props.editor.copySound(selected.value.id);
 }
 </script>
 <template>
@@ -143,7 +139,8 @@ function copy() {
       >
     </div>
     <div class="note-actions">
-      <button :disabled="disabled" @click="editor.importSound()">导入音效</button
+      <button @click="commands.run('import.sound')" :disabled="!commands.enabled('import.sound')">
+        导入音效</button
       ><button @click="editor.sounds.stopAll()">停止试听</button>
     </div>
     <label class="stacked-label"
@@ -174,12 +171,18 @@ function copy() {
         class="sound-select"
         :class="{ selected: selected?.id === cue.id }"
         :data-sound-id="cue.id"
-        @click="editor.selectedSoundId.value = cue.id"
+        @click="editor.selectSound(cue.id)"
       >
         {{ label(cue) }}
       </button>
     </div>
-    <template v-if="selected">
+    <div
+      v-if="selected"
+      @pointerdown.capture="editor.claimTarget({ kind: 'sound', ids: [selected.id] })"
+      @keydown.capture="
+        $event.key !== 'Tab' && editor.claimTarget({ kind: 'sound', ids: [selected.id] })
+      "
+    >
       <label class="stacked-label"
         >触发来源<select
           aria-label="音效触发来源"
@@ -301,10 +304,19 @@ function copy() {
       >
       <div class="note-actions">
         <button @click="editor.auditionSound(selected.assetId, selected.id)">试听片段</button
-        ><button :disabled="disabled" @click="copy">复制音效片段</button
-        ><button :disabled="disabled" @click="remove">删除音效片段</button>
+        ><button
+          @click="commands.run('object.duplicate', { kind: 'sound', ids: [selected.id] })"
+          :disabled="!commands.enabled('object.duplicate', { kind: 'sound', ids: [selected.id] })"
+        >
+          复制音效片段</button
+        ><button
+          @click="commands.run('object.delete', { kind: 'sound', ids: [selected.id] })"
+          :disabled="!commands.enabled('object.delete', { kind: 'sound', ids: [selected.id] })"
+        >
+          删除音效片段
+        </button>
       </div>
-    </template>
+    </div>
     <p class="help-text">
       试玩中的条件音效跟随真实命中；预览模拟成功。时间音效始终按音乐时间触发。隐藏时间轴轨道只改变编辑显示。
     </p>

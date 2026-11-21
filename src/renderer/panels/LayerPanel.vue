@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useCommands } from '../commands/registry';
+const commands = useCommands();
 import { computed, ref } from 'vue';
 import type { Editor } from '../state/editor';
 import type { Layer } from '../../shared/models';
-import { isLocked, parents } from '../../core/layers';
+import { isLocked } from '../../core/layers';
 const props = defineProps<{ editor: Editor }>();
 const readOnly = computed(
   () => props.editor.busy.value || props.editor.chart.mode.value !== 'edit',
@@ -63,35 +65,27 @@ function drop(event: DragEvent, layer: Layer, parentId: string | null): void {
   dragging.value = null;
   over.value = '';
 }
-function nudge(direction: number): void {
-  const p = props.editor.project.value,
-    id = props.editor.selectedLayerId.value;
-  if (!id) return;
-  const parentId = parents(p).get(id) ?? null;
-  const ids = parentId
-    ? (p.layers[parentId] as Extract<Layer, { kind: 'group' }>).childrenBottomToTop
-    : p.rootLayersBottomToTop;
-  const i = ids.indexOf(id),
-    target = i + direction;
-  if (target < 0 || target >= ids.length) return;
-  props.editor.edit({ type: 'move-layer', id, parentId, index: direction > 0 ? i + 2 : i - 1 });
-}
 </script>
 <template>
   <div class="layer-actions">
-    <button :disabled="readOnly" @click="editor.importImage()">＋ 导入 PSD / PNG</button
+    <button @click="commands.run('import.image')" :disabled="!commands.enabled('import.image')">
+      ＋ 导入 PSD / PNG</button
     ><button
       title="将选中图层上移一层"
       aria-label="图层上移"
-      :disabled="readOnly || !editor.selectedLayerId.value"
-      @click="nudge(1)"
+      @click="commands.run('layer.up', { kind: 'layer', ids: [editor.selectedLayerId.value!] })"
+      :disabled="
+        !commands.enabled('layer.up', { kind: 'layer', ids: [editor.selectedLayerId.value!] })
+      "
     >
       ↑</button
     ><button
       title="将选中图层下移一层"
       aria-label="图层下移"
-      :disabled="readOnly || !editor.selectedLayerId.value"
-      @click="nudge(-1)"
+      @click="commands.run('layer.down', { kind: 'layer', ids: [editor.selectedLayerId.value!] })"
+      :disabled="
+        !commands.enabled('layer.down', { kind: 'layer', ids: [editor.selectedLayerId.value!] })
+      "
     >
       ↓
     </button>
@@ -99,12 +93,12 @@ function nudge(direction: number): void {
       class="delete-button"
       title="删除选中图层或整个分组，可撤销（Delete）"
       aria-label="删除选中图层或分组"
-      :disabled="
-        readOnly ||
-        !editor.selectedLayerId.value ||
-        isLocked(editor.project.value, editor.selectedLayerId.value)
+      @click="
+        commands.run('object.delete', { kind: 'layer', ids: [editor.selectedLayerId.value!] })
       "
-      @click="editor.deleteSelectedLayer()"
+      :disabled="
+        !commands.enabled('object.delete', { kind: 'layer', ids: [editor.selectedLayerId.value!] })
+      "
     >
       删除
     </button>
@@ -128,11 +122,7 @@ function nudge(direction: number): void {
       :draggable="!readOnly && !isLocked(editor.project.value, layer.id)"
       tabindex="0"
       @click="editor.selectLayer(layer.id)"
-      @keydown.enter="editor.selectLayer(layer.id)"
-      @keydown.delete.prevent.stop="
-        editor.selectLayer(layer.id);
-        editor.deleteSelectedLayer();
-      "
+      @keydown.enter="!$event.isComposing && !$event.repeat && editor.selectLayer(layer.id)"
       @dragstart="start($event, layer.id)"
       @dragend="
         dragging = null;
@@ -163,19 +153,15 @@ function nudge(direction: number): void {
       <span class="layer-name" :title="layer.name">{{ layer.name }}</span>
       <button
         :aria-label="`${layer.enabled ? '隐藏' : '显示'} ${layer.name}`"
-        :disabled="readOnly"
-        @click.stop="
-          editor.edit({ type: 'set-layer', id: layer.id, patch: { enabled: !layer.enabled } })
-        "
+        @click.stop="commands.run('layer.visible', { kind: 'layer', ids: [layer.id] })"
+        :disabled="!commands.enabled('layer.visible', { kind: 'layer', ids: [layer.id] })"
       >
         {{ layer.enabled ? '◉' : '○' }}
       </button>
       <button
         :aria-label="`${layer.locked ? '解锁' : '锁定'} ${layer.name}`"
-        :disabled="readOnly"
-        @click.stop="
-          editor.edit({ type: 'set-layer', id: layer.id, patch: { locked: !layer.locked } })
-        "
+        @click.stop="commands.run('layer.lock', { kind: 'layer', ids: [layer.id] })"
+        :disabled="!commands.enabled('layer.lock', { kind: 'layer', ids: [layer.id] })"
       >
         {{ layer.locked ? '▣' : '▫' }}
       </button>

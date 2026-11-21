@@ -26,8 +26,13 @@ import { createCamera } from '../camera/controller';
 import type { EditorStage } from '../canvas/stage';
 import { createChart } from '../chart/controller';
 import { createReveals } from '../reveals/controller';
+import { validTarget, type CommandTarget } from '../commands/context';
 
 export function createEditor() {
+  const commandTarget = shallowRef<CommandTarget>(null);
+  function claimTarget(target: CommandTarget) {
+    commandTarget.value = target;
+  }
   let history = new EditHistory(createProject());
   let committed = history.committed,
     version = 0;
@@ -87,6 +92,7 @@ export function createEditor() {
   const take = new PlaybackTake();
   const chart = createChart({
     take,
+    onSelect: (ids) => claimTarget(ids.length ? { kind: 'notes', ids: [...ids] } : null),
     sourceOnly: () => !reveals.audition.value && reveals.override.value === null,
     revealOverride: () =>
       reveals.selectedId.value && reveals.override.value !== null
@@ -104,7 +110,13 @@ export function createEditor() {
   });
   const tempo = chart.tempo;
   const analysis = createAudioAnalysis({ project, buffer, busy, commit: edit, seek, notify });
-  const reveals = createReveals({ project: () => history.current, chart, commit: edit, notify });
+  const reveals = createReveals({
+    project: () => history.current,
+    chart,
+    commit: edit,
+    notify,
+    onSelect: (id) => claimTarget({ kind: 'reveal', ids: [id] }),
+  });
   const sounds = new SoundEngine(transport, take, (message) => notify(message, 'warning'));
   const selectedSoundId = ref<string | null>(null),
     selectedSoundAssetId = ref<string | null>(null);
@@ -120,6 +132,7 @@ export function createEditor() {
     if (e.kind === 'session-reset') sounds.reset(e.timeUs);
   });
   const camera = createCamera({
+    onSelect: (kind, id) => claimTarget({ kind, ids: [id] }),
     project: () => history.current,
     time: () => transport.snapshot().timeUs,
     edit,
@@ -163,6 +176,7 @@ export function createEditor() {
     chart.setProject(history.current);
     reveals.setProject(history.current);
     camera.setProject(history.current);
+    if (!validTarget(project.value, commandTarget.value)) claimTarget(null);
     dirty.value = history.dirty;
     canUndo.value = history.canUndo;
     canRedo.value = history.canRedo;
@@ -280,6 +294,7 @@ export function createEditor() {
     snapshottedVersion = next.recovery?.version ?? -1;
     recoveryTime.value = next.recovery?.savedAt ?? null;
     recoveryError.value = '';
+    claimTarget(null);
     session.value = next;
     selectLayer(null);
     lastImport.value = null;
@@ -517,13 +532,17 @@ export function createEditor() {
       notify(error instanceof Error ? error.message : '音效试听失败', 'error');
     }
   }
+  function selectSound(id: string) {
+    selectedSoundId.value = id;
+    claimTarget({ kind: 'sound', ids: [id] });
+  }
   function copySound(id: string): void {
     const cue = structuredClone(project.value.sounds[id]);
     cue.id = crypto.randomUUID();
     if (cue.trigger.kind === 'timeline')
       cue.trigger.at = { basis: 'time', timeUs: tempo.value.resolve(cue.trigger.at) + 500000 };
     else cue.delayUs += 125000;
-    if (edit({ type: 'put-sound', cue })) selectedSoundId.value = cue.id;
+    if (edit({ type: 'put-sound', cue })) selectSound(cue.id);
   }
   async function importImage(): Promise<void> {
     await run(async () => {
@@ -566,6 +585,8 @@ export function createEditor() {
       chart.nodeId.value = null;
       chart.setTool('layers');
     }
+    if (id) claimTarget({ kind: 'layer', ids: [id] });
+    else if (commandTarget.value?.kind === 'layer') claimTarget(null);
     selectedLayerId.value = id;
     stage.value?.select(id);
   }
@@ -782,6 +803,9 @@ export function createEditor() {
     resources.dispose();
   }
   return {
+    commandTarget,
+    claimTarget,
+    selectSound,
     chart,
     analysis,
     sounds,

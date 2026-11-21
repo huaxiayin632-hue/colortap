@@ -37,8 +37,9 @@ const height = computed(() =>
 );
 watchEffect(() => emit('resize', height.value));
 function down(e: PointerEvent, id: string, start: number) {
+  if (e.button !== 0) return;
   e.preventDefault();
-  props.editor.selectedSoundId.value = id;
+  props.editor.selectSound(id);
   (e.currentTarget as HTMLElement).focus({ preventScroll: true });
   if (props.editor.chart.mode.value !== 'edit') return;
   props.editor.pause();
@@ -71,9 +72,6 @@ function up(e: PointerEvent, cancel = false) {
   else cue.delayUs = Math.max(0, cue.delayUs + d);
   props.editor.edit({ type: 'put-sound', cue });
 }
-function copy(id: string) {
-  props.editor.copySound(id);
-}
 </script>
 <template>
   <div
@@ -94,12 +92,16 @@ function copy(id: string) {
       :data-time-us="c.start"
       :title="c.label"
       :style="{ left: c.x + 'px', top: 5 + c.lane * 27 + 'px', width: c.width + 'px' }"
+      @click="
+        if ($event.detail === 0) {
+          editor.selectSound(c.cue.id);
+          editor.seek(c.start);
+        }
+      "
       @pointerdown.stop="down($event, c.cue.id, c.start)"
       @pointermove.stop="move"
       @pointerup.stop="up($event)"
       @pointercancel.stop="up($event, true)"
-      @keydown.delete.prevent.stop="editor.edit({ type: 'delete-sound', id: c.cue.id })"
-      @keydown.ctrl.d.prevent.stop="copy(c.cue.id)"
     >
       {{ c.label }}
     </button>

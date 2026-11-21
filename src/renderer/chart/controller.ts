@@ -30,6 +30,7 @@ import type { BezierPath, Moment, Note, Project, Vec2 } from '../../shared/model
 export type EditorMode = 'edit' | 'preview' | 'playtest';
 export type ChartTool = 'layers' | 'select' | 'circle' | 'hold' | 'slider' | 'path';
 interface ChartHost {
+  onSelect?(ids: string[]): void;
   take?: PlaybackTake;
   sourceOnly?(): boolean;
   revealOverride?(): RevealEvaluation['override'];
@@ -110,6 +111,7 @@ export function createChart(host: ChartHost) {
   let session: PlaySession | null = null,
     dragSource: Project | null = null;
   let published = host.project();
+  const canPaste = ref(false);
   let clipboard: {
     notes: Note[];
     paths: BezierPath[];
@@ -312,11 +314,16 @@ export function createChart(host: ChartHost) {
       : ids.filter((id) => document.value.notes[id]);
     nodeId.value = null;
     appendMode.value = false;
+    claimSelection();
+  }
+  function claimSelection() {
+    host.onSelect?.(selected.value);
   }
   function select(id: string, toggle = false): void {
     if (toggle && selected.value.includes(id))
       selected.value = selected.value.filter((key) => key !== id);
     else choose([id], toggle);
+    claimSelection();
   }
   function setTool(value: ChartTool): void {
     if (mode.value !== 'edit') return;
@@ -508,6 +515,7 @@ export function createChart(host: ChartHost) {
       return note;
     });
     clipboard = { ...copied, detached, projectId: document.value.id };
+    canPaste.value = copied.notes.length > 0;
   }
   function paste(): void {
     if (!clipboard) return;
@@ -673,6 +681,8 @@ export function createChart(host: ChartHost) {
       : 0,
   );
   return {
+    claimSelection,
+    canPaste,
     displayMatrix,
     displayMatrices,
     bindLayer,

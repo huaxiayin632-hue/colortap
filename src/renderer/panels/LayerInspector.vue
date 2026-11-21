@@ -34,7 +34,15 @@ const source = computed(() =>
 );
 </script>
 <template>
-  <section v-if="layer" class="property-section layer-inspector" aria-label="图层属性">
+  <section
+    v-if="layer"
+    class="property-section layer-inspector"
+    aria-label="图层属性"
+    @pointerdown.capture="editor.claimTarget({ kind: 'layer', ids: [layer.id] })"
+    @keydown.capture="
+      $event.key !== 'Tab' && editor.claimTarget({ kind: 'layer', ids: [layer.id] })
+    "
+  >
     <h2>
       {{ layer.kind === 'group' ? '分组' : '图层' }}属性
       <span v-if="locked" class="muted">· 已锁定</span>

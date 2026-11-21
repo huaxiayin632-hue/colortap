@@ -30,6 +30,7 @@ const notes = computed(() =>
     }),
 );
 function down(event: PointerEvent, id: string, kind: 'move' | 'duration'): void {
+  if (event.button !== 0) return;
   if (props.editor.busy.value) return;
   if (c.mode.value !== 'edit') {
     props.editor.seek(c.tempo.value.resolve(c.document.value.notes[id].at));
@@ -40,6 +41,7 @@ function down(event: PointerEvent, id: string, kind: 'move' | 'duration'): void 
   if (event.shiftKey) c.select(id, true);
   else if (!c.selected.value.includes(id)) c.select(id);
   if (!c.selected.value.includes(id)) return;
+  c.claimSelection();
   const note = c.document.value.notes[id];
   drag = {
     id,
@@ -126,9 +128,11 @@ function up(event: PointerEvent, cancelled = false): void {
       @pointermove.stop="move"
       @pointerup.stop="up($event)"
       @pointercancel.stop="up($event, true)"
-      @keydown.enter="
-        c.select(entry.note.id);
-        editor.seek(entry.start);
+      @click="
+        if ($event.detail === 0) {
+          c.select(entry.note.id);
+          editor.seek(entry.start);
+        }
       "
     >
       {{ entry.index + 1

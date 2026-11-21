@@ -17,7 +17,9 @@ import RevealPanel from './reveals/RevealPanel.vue';
 import SoundPanel from './audio/SoundPanel.vue';
 import AnalysisPanel from './audio/AnalysisPanel.vue';
 import CameraPanel from './camera/CameraPanel.vue';
-import type { ChartTool } from './chart/controller';
+import { createCommands, commandsKey } from './commands/registry';
+import CommandOverlays from './commands/CommandOverlays.vue';
+import { playtestCodes } from './commands/context';
 
 const editor = createEditor();
 const workspace = useWorkspace();
@@ -66,6 +68,10 @@ watch(editor.chart.tool, (tool) => {
   if (tool !== 'layers') editor.camera.tool.value = 'none';
 });
 const showNew = ref(false);
+const commands = createCommands(editor, workspace, () => {
+  showNew.value = true;
+});
+provide(commandsKey, commands);
 const draft = ref({ name: '新工程', width: 6000, height: 6000 });
 const newError = ref('');
 const showPerformance = ref(false);
@@ -123,182 +129,14 @@ function changeSize(axis: 'width' | 'height', value: string, output = false): vo
   };
   editor.edit({ type: output ? 'resize-output' : 'resize-artwork', size });
 }
-function keydown(event: KeyboardEvent): void {
-  const target = event.target as HTMLElement;
-  const editingText =
-    (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) &&
-      !(
-        target instanceof HTMLInputElement &&
-        ['range', 'checkbox', 'radio', 'button'].includes(target.type)
-      )) ||
-    target.isContentEditable;
-  const modal = Boolean(document.querySelector('.modal-backdrop, [role="dialog"]'));
-  // Tab remains normal focus navigation everywhere except the canvas itself.
-  if (
-    event.key === 'Tab' &&
-    !event.shiftKey &&
-    !event.ctrlKey &&
-    !event.altKey &&
-    !event.metaKey &&
-    !event.repeat &&
-    !modal &&
-    !editor.busy.value &&
-    target.matches('.canvas-host, .canvas-host canvas')
-  ) {
-    event.preventDefault();
-    canvasFocus.value = !canvasFocus.value;
-    return;
-  }
-  if (
-    !editingText &&
-    !modal &&
-    editor.reveals.pathEditing.value &&
-    editor.chart.mode.value === 'edit'
-  ) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      editor.reveals.cancel();
-      return;
-    }
-    if (event.key === 'Enter' && editor.reveals.drawing.value) {
-      event.preventDefault();
-      editor.reveals.finishDrawing();
-      return;
-    }
-    if (event.key === 'Delete') {
-      event.preventDefault();
-      editor.reveals.deleteNode();
-      return;
-    }
-  }
-  if (
-    editor.chart.mode.value === 'playtest' &&
-    !editingText &&
-    !modal &&
-    !event.ctrlKey &&
-    !event.metaKey &&
-    ['KeyZ', 'KeyX'].includes(event.code)
-  ) {
-    event.preventDefault();
-    if (!event.repeat) editor.chart.input(event.code, true);
-    return;
-  }
-  if (modal && !((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's')) return;
-  if ((event.ctrlKey || event.metaKey) && !event.altKey) {
-    const key = event.key.toLowerCase();
-    if (key === 's') {
-      event.preventDefault();
-      void editor.save(event.shiftKey);
-    }
-    if (key === 'o') {
-      event.preventDefault();
-      if (!showNew.value) void editor.open();
-    }
-    if (key === 'n') {
-      event.preventDefault();
-      showNew.value = true;
-    }
-    if (!editingText && key === 'z') {
-      event.preventDefault();
-      void (event.shiftKey ? editor.redo() : editor.undo());
-    }
-    if (!editingText && key === 'y') {
-      event.preventDefault();
-      void editor.redo();
-    }
-    if (
-      !editingText &&
-      editor.chart.mode.value === 'edit' &&
-      editor.chart.tool.value !== 'layers'
-    ) {
-      if (key === 'a') {
-        event.preventDefault();
-        editor.chart.selectAll();
-      }
-      if (key === 'd') {
-        event.preventDefault();
-        editor.chart.duplicate();
-      }
-      if (key === 'c') {
-        event.preventDefault();
-        editor.chart.copy();
-      }
-      if (key === 'v') {
-        event.preventDefault();
-        editor.chart.paste();
-      }
-    }
-  } else if (
-    event.code === 'Space' &&
-    !editingText &&
-    !showNew.value &&
-    !editor.confirmReplacement.value
-  ) {
-    event.preventDefault();
-    void editor.togglePlay();
-  } else if (
-    event.key === 'Delete' &&
-    !editingText &&
-    !showNew.value &&
-    !showPerformance.value &&
-    !document.querySelector('[role="dialog"]') &&
-    !editor.confirmReplacement.value
-  ) {
-    event.preventDefault();
-    if (editor.chart.mode.value === 'edit' && inspectorTab.value === 'camera') {
-      if (editor.camera.selectedShake.value)
-        editor.edit({ type: 'delete-shake', id: editor.camera.selectedShake.value });
-      else editor.camera.remove();
-      return;
-    }
-    if (
-      editor.chart.mode.value === 'edit' &&
-      inspectorTab.value === 'sounds' &&
-      editor.selectedSoundId.value
-    ) {
-      editor.edit({ type: 'delete-sound', id: editor.selectedSoundId.value });
-      return;
-    }
-    if (editor.chart.mode.value === 'edit' && editor.chart.tool.value !== 'layers') {
-      if (editor.chart.tool.value === 'path' && editor.chart.nodeId.value)
-        editor.chart.deleteNode();
-      else editor.chart.removeNotes();
-    } else editor.deleteSelectedLayer();
-  } else if (!editingText && editor.chart.mode.value === 'edit' && !event.altKey) {
-    const tools: Record<string, ChartTool> = {
-      v: 'select',
-      c: 'circle',
-      s: 'slider',
-      p: 'path',
-      l: 'layers',
-    };
-    if (tools[event.key.toLowerCase()]) {
-      event.preventDefault();
-      editor.chart.setTool(tools[event.key.toLowerCase()]);
-    }
-    if (
-      event.key === 'Enter' &&
-      editor.chart.tool.value === 'slider' &&
-      (editor.chart.sliderDraft.value?.nodes.length ?? 0) >= 2
-    ) {
-      event.preventDefault();
-      editor.chart.finishSlider();
-    }
-    if (event.key === 'Escape') {
-      editor.chart.cancelGesture();
-      editor.chart.choose([]);
-    }
-  } else if (!editingText && event.key === 'Escape') {
-    editor.chart.setMode('edit');
-  }
-}
 function keyup(event: KeyboardEvent): void {
-  if (['KeyZ', 'KeyX'].includes(event.code)) editor.chart.input(event.code, false);
+  if (playtestCodes.includes(event.code)) editor.chart.input(event.code, false);
 }
 function visibility(): void {
   if (document.hidden) editor.pause();
 }
 function blur(): void {
+  commands.blur();
   editor.pause();
 }
 watch([editor.project, editor.dirty], () => {
@@ -306,14 +144,18 @@ watch([editor.project, editor.dirty], () => {
 });
 onMounted(() => {
   void editor.initialize();
-  window.addEventListener('keydown', keydown);
+  window.addEventListener('keydown', commands.keydown);
   window.addEventListener('keyup', keyup);
+  window.addEventListener('compositionstart', commands.composition);
+  window.addEventListener('compositionend', commands.composition);
   document.addEventListener('visibilitychange', visibility);
   window.addEventListener('blur', blur);
 });
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', keydown);
+  window.removeEventListener('keydown', commands.keydown);
   window.removeEventListener('keyup', keyup);
+  window.removeEventListener('compositionstart', commands.composition);
+  window.removeEventListener('compositionend', commands.composition);
   document.removeEventListener('visibilitychange', visibility);
   window.removeEventListener('blur', blur);
   void editor.dispose();
@@ -326,7 +168,9 @@ onBeforeUnmount(() => {
     :aria-busy="editor.busy.value"
     :style="shellStyle"
     :data-canvas-focus="canvasFocus"
+    @contextmenu="commands.openContext"
   >
+    <CommandOverlays :commands="commands" :editor="editor" />
     <header class="main-toolbar">
       <div class="toolbar-row project-row">
         <div class="brand">
@@ -335,10 +179,32 @@ onBeforeUnmount(() => {
           ><strong>Rhythm Canvas</strong><span class="version">0.5.0</span>
         </div>
         <div class="toolbar-group">
-          <button :disabled="editor.busy.value" title="Ctrl+N" @click="showNew = true">新建</button>
-          <button :disabled="editor.busy.value" title="Ctrl+O" @click="editor.open()">打开</button>
-          <button :disabled="editor.busy.value" title="Ctrl+S" @click="editor.save()">保存</button>
-          <button :disabled="editor.busy.value" title="Ctrl+Shift+S" @click="editor.save(true)">
+          <button
+            title="Ctrl+N"
+            @click="commands.run('file.new')"
+            :disabled="!commands.enabled('file.new')"
+          >
+            新建
+          </button>
+          <button
+            title="Ctrl+O"
+            @click="commands.run('file.open')"
+            :disabled="!commands.enabled('file.open')"
+          >
+            打开
+          </button>
+          <button
+            title="Ctrl+S"
+            @click="commands.run('file.save')"
+            :disabled="!commands.enabled('file.save')"
+          >
+            保存
+          </button>
+          <button
+            title="Ctrl+Shift+S"
+            @click="commands.run('file.saveAs')"
+            :disabled="!commands.enabled('file.saveAs')"
+          >
             另存为
           </button>
         </div>
@@ -346,19 +212,15 @@ onBeforeUnmount(() => {
           <button
             aria-label="撤销"
             title="撤销 Ctrl+Z"
-            :disabled="
-              !editor.canUndo.value || editor.busy.value || editor.chart.mode.value !== 'edit'
-            "
-            @click="editor.undo()"
+            @click="commands.run('history.undo')"
+            :disabled="!commands.enabled('history.undo')"
           >
             ↶</button
           ><button
             aria-label="重做"
             title="重做 Ctrl+Y"
-            :disabled="
-              !editor.canRedo.value || editor.busy.value || editor.chart.mode.value !== 'edit'
-            "
-            @click="editor.redo()"
+            @click="commands.run('history.redo')"
+            :disabled="!commands.enabled('history.redo')"
           >
             ↷
           </button>
@@ -398,21 +260,25 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="toolbar-row transport-row">
-        <button class="import-button" :disabled="editor.busy.value" @click="editor.importMusic()">
+        <button
+          class="import-button"
+          @click="commands.run('import.music')"
+          :disabled="!commands.enabled('import.music')"
+        >
           <span aria-hidden="true">＋</span> 导入音乐
         </button>
         <div class="transport-buttons">
           <button
             aria-label="回到开头"
-            :disabled="!editor.playback.value.ready || editor.busy.value"
-            @click="editor.seek(0)"
+            @click="commands.run('play.start')"
+            :disabled="!commands.enabled('play.start')"
           >
             |◀</button
           ><button
             class="play-button"
             :aria-label="editor.playback.value.playing ? '暂停' : '播放'"
-            :disabled="!editor.playback.value.ready || editor.busy.value"
-            @click="editor.togglePlay()"
+            @click="commands.run('play.toggle')"
+            :disabled="!commands.enabled('play.toggle')"
           >
             {{ editor.playback.value.playing ? 'Ⅱ' : '▶' }}
           </button>
@@ -450,19 +316,45 @@ onBeforeUnmount(() => {
 
     <nav class="workspace-toolbar" aria-label="工作区布局">
       <span class="muted">布局</span>
-      <button title="优先时间轴与音符编辑空间" @click="workspace.preset('chart')">谱面</button>
-      <button title="优先图层与属性空间" @click="workspace.preset('show')">演出</button>
-      <button title="优先画布空间" @click="workspace.preset('camera')">镜头</button>
+      <button
+        title="优先时间轴与音符编辑空间"
+        @click="commands.run('workspace.chart')"
+        :disabled="!commands.enabled('workspace.chart')"
+      >
+        谱面
+      </button>
+      <button
+        title="优先图层与属性空间"
+        @click="commands.run('workspace.show')"
+        :disabled="!commands.enabled('workspace.show')"
+      >
+        演出
+      </button>
+      <button
+        title="优先画布空间"
+        @click="commands.run('workspace.camera')"
+        :disabled="!commands.enabled('workspace.camera')"
+      >
+        镜头
+      </button>
       <span class="toolbar-spacer" />
+      <button title="?" @click="commands.run('help')" :disabled="!commands.enabled('help')">
+        快捷键一览
+      </button>
       <span v-if="storageError" role="status" class="error-text">布局暂未保存到本机</span>
       <button
         :aria-pressed="canvasFocus"
         title="在画布上按 Tab 可切换"
-        @click="canvasFocus = !canvasFocus"
+        @click="commands.run('workspace.focus')"
+        :disabled="!commands.enabled('workspace.focus')"
       >
         {{ canvasFocus ? '退出专注画布' : '专注画布' }}
       </button>
-      <button title="恢复谱面布局的默认尺寸和展开状态" @click="workspace.preset('chart')">
+      <button
+        title="恢复谱面布局的默认尺寸和展开状态"
+        @click="commands.run('workspace.reset')"
+        :disabled="!commands.enabled('workspace.reset')"
+      >
         重置布局
       </button>
     </nav>
@@ -471,8 +363,8 @@ onBeforeUnmount(() => {
         v-show="!canvasFocus && !layout.collapsed.left"
         :editor="editor"
         :layout="layout"
-        @toggle="workspace.toggle('left')"
-        @section-toggle="layout.sections[$event].collapsed = !layout.sections[$event].collapsed"
+        @toggle="commands.run('workspace.left')"
+        @section-toggle="commands.run('section.' + $event)"
         @weights="weights"
         @resize-start="workspace.beginResize"
         @resize-end="workspace.endResize"
@@ -481,7 +373,8 @@ onBeforeUnmount(() => {
         v-show="!canvasFocus && layout.collapsed.left"
         class="panel-rail left-rail"
         aria-label="展开左栏"
-        @click="workspace.toggle('left')"
+        @click="commands.run('workspace.left')"
+        :disabled="!commands.enabled('workspace.left')"
       >
         › 图层与素材
       </button>
@@ -514,7 +407,8 @@ onBeforeUnmount(() => {
         v-show="!canvasFocus && layout.collapsed.right"
         class="panel-rail right-rail"
         aria-label="展开右栏"
-        @click="workspace.toggle('right')"
+        @click="commands.run('workspace.right')"
+        :disabled="!commands.enabled('workspace.right')"
       >
         ‹ 属性
       </button>
@@ -536,7 +430,13 @@ onBeforeUnmount(() => {
           >
             取消选择
           </button>
-          <button aria-label="收起右栏" @click="workspace.toggle('right')">›</button>
+          <button
+            aria-label="收起右栏"
+            @click="commands.run('workspace.right')"
+            :disabled="!commands.enabled('workspace.right')"
+          >
+            ›
+          </button>
         </header>
         <div ref="inspectorScroll" class="inspector-scroll">
           <div class="production-tabs">
@@ -707,18 +607,25 @@ onBeforeUnmount(() => {
     <TimelinePanel
       v-show="!canvasFocus && !layout.collapsed.timeline"
       :editor="editor"
-      @collapse="workspace.toggle('timeline')"
+      @collapse="commands.run('workspace.timeline')"
     />
     <button
       v-show="!canvasFocus && layout.collapsed.timeline"
       class="timeline-rail"
       aria-label="展开时间轴"
-      @click="workspace.toggle('timeline')"
+      @click="commands.run('workspace.timeline')"
+      :disabled="!commands.enabled('workspace.timeline')"
     >
       ▴ 时间轴
     </button>
 
     <footer class="status-bar">
+      <span
+        class="command-target"
+        data-testid="command-target"
+        :title="'Delete：' + commands.targetLabel.value"
+        >{{ commands.targetLabel.value }}</span
+      >
       <span
         class="status-message"
         :class="editor.notice.value.kind"
@@ -790,7 +697,11 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <div v-if="showNew" class="modal-backdrop" @keydown.esc="showNew = false">
+    <div
+      v-if="showNew"
+      class="modal-backdrop"
+      @keydown.esc="!$event.isComposing && $event.keyCode !== 229 && (showNew = false)"
+    >
       <form
         class="modal"
         aria-label="新建工程"
@@ -905,7 +816,11 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
-    <div v-if="showPerformance" class="modal-backdrop" @keydown.esc="showPerformance = false">
+    <div
+      v-if="showPerformance"
+      class="modal-backdrop"
+      @keydown.esc="!$event.isComposing && $event.keyCode !== 229 && (showPerformance = false)"
+    >
       <section
         class="modal performance-modal"
         role="dialog"
