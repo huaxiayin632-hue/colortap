@@ -120,6 +120,7 @@ function changeByStep(amount: number): void {
 }
 
 function keydown(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229) return;
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
   event.preventDefault();
   const multiplier = event.shiftKey ? 10 : event.altKey ? 0.1 : 1;

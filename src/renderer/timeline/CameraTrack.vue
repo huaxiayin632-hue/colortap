@@ -31,11 +31,11 @@ const x = (id: string, time: number, resize = false) =>
   ((time + (draft.value?.id === id && drag?.resize === resize ? draft.value.delta : 0)) / 1e6) *
   props.pixelsPerSecond;
 function down(e: PointerEvent, id: string, shake = false, resize = false) {
+  if (e.button !== 0) return;
   e.preventDefault();
   (e.currentTarget as HTMLElement).focus({ preventScroll: true });
   if (shake) {
-    c.selectedId.value = null;
-    c.selectedShake.value = id;
+    c.chooseShake(id);
   } else c.choose(id);
   if (props.editor.chart.mode.value !== 'edit') return;
   props.editor.pause();
@@ -84,9 +84,6 @@ function up(e: PointerEvent, cancel = false) {
     props.editor.edit({ type: 'put-camera-key', key });
   }
 }
-function remove(id: string, shake = false) {
-  props.editor.edit(shake ? { type: 'delete-shake', id } : { type: 'delete-camera-key', id });
-}
 function shakeWidth(id: string, duration: number) {
   return Math.max(
     40,
@@ -120,15 +117,16 @@ function shakeWidth(id: string, duration: number) {
       :data-time-us="entry.time"
       :title="`${(entry.time / 1e6).toFixed(3)}秒 · ${entry.key.zoom.toFixed(2)}×`"
       :style="{ left: x(entry.key.id, entry.time) + 'px' }"
+      @click="
+        if ($event.detail === 0) {
+          c.choose(entry.key.id);
+          editor.seek(entry.time);
+        }
+      "
       @pointerdown.stop="down($event, entry.key.id)"
       @pointermove.stop="move"
       @pointerup.stop="up($event)"
       @pointercancel.stop="up($event, true)"
-      @keydown.delete.prevent.stop="remove(entry.key.id)"
-      @keydown.ctrl.d.prevent.stop="
-        c.choose(entry.key.id);
-        c.copy();
-      "
     >
       ◆</button
     ><button
@@ -140,11 +138,16 @@ function shakeWidth(id: string, duration: number) {
         left: x(entry.s.id, entry.start) + 'px',
         width: shakeWidth(entry.s.id, entry.duration) + 'px',
       }"
+      @click="
+        if ($event.detail === 0) {
+          c.chooseShake(entry.s.id);
+          editor.seek(entry.start);
+        }
+      "
       @pointerdown.stop="down($event, entry.s.id, true)"
       @pointermove.stop="move"
       @pointerup.stop="up($event)"
       @pointercancel.stop="up($event, true)"
-      @keydown.delete.prevent.stop="remove(entry.s.id, true)"
     >
       震动<span class="duration-handle" @pointerdown.stop="down($event, entry.s.id, true, true)"
         >▏</span

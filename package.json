@@ -31,7 +31,8 @@
     "test:perf": "node scripts/perf-stage4.mjs",
     "test:production": "node scripts/e2e-production.mjs",
     "test:perf:production": "node scripts/perf-stage4.mjs --production --name=stage5-final --seconds=10 --runs=1 --counts=1,4,8,16",
-    "test:workspace": "node scripts/e2e-workspace.mjs"
+    "test:workspace": "node scripts/e2e-workspace.mjs",
+    "test:commands": "node scripts/e2e-commands.mjs"
   },
   "dependencies": {
     "ag-psd": "^31.0.3",

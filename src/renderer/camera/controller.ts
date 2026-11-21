@@ -8,6 +8,7 @@ import { TempoMap } from '../../core/timing';
 import type { ProductionCommand } from '../../application/history';
 
 interface Host {
+  onSelect?(kind: 'camera' | 'shake', id: string): void;
   project(): Project;
   time(): number;
   edit(c: ProductionCommand): boolean;
@@ -47,8 +48,14 @@ export function createCamera(host: Host) {
     if (host.mode() !== 'edit') tool.value = 'none';
   }
   function choose(id: string) {
+    host.onSelect?.('camera', id);
     selectedId.value = id;
     selectedShake.value = null;
+  }
+  function chooseShake(id: string) {
+    selectedId.value = null;
+    selectedShake.value = id;
+    host.onSelect?.('shake', id);
   }
   function moment() {
     return snappedMoment(
@@ -128,8 +135,7 @@ export function createCamera(host: Host) {
       seed: 7,
     };
     if (host.edit({ type: 'put-shake', shake: s })) {
-      selectedShake.value = s.id;
-      selectedId.value = null;
+      chooseShake(s.id);
     }
   }
   function patchShake(patch: Partial<CameraShake>) {
@@ -194,6 +200,7 @@ export function createCamera(host: Host) {
     }
   }
   return {
+    chooseShake,
     document,
     selectedId,
     selectedShake,

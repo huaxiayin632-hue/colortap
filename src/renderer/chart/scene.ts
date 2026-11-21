@@ -334,6 +334,22 @@ export class ChartScene {
     }
     return null;
   }
+  contextTarget(world: Vec2): string | null {
+    const at = this.toChart(world),
+      c = this.chart;
+    if (c.tool.value === 'path') {
+      const control = this.pathEditor.hit(
+        at,
+        9 / Math.max(1e-8, this.screenScale() * chartMapping(c.document.value).scale),
+      );
+      if (control && c.selectedNote.value) {
+        c.nodeId.value = control.id;
+        c.claimSelection();
+        return c.selectedNote.value.id;
+      }
+    }
+    return this.hit(at);
+  }
   down(world: Vec2, shift: boolean): void {
     const at = this.toChart(world),
       c = this.chart;
@@ -349,6 +365,7 @@ export class ChartScene {
         9 / Math.max(1e-8, this.screenScale() * chartMapping(c.document.value).scale);
       const control = this.pathEditor.hit(at, threshold);
       if (control) {
+        c.claimSelection();
         c.nodeId.value = control.id;
         c.sliderCursor.value = null;
         this.gesture = {
@@ -381,6 +398,7 @@ export class ChartScene {
     if (hit) {
       if (shift) c.select(hit, true);
       else if (!c.selected.value.includes(hit)) c.select(hit);
+      if (c.selected.value.includes(hit)) c.claimSelection();
       if (c.selected.value.includes(hit)) this.gesture = { kind: 'move', start: at };
     } else {
       this.gesture = { kind: 'box', start: at, additive: shift };

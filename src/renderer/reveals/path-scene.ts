@@ -18,6 +18,11 @@ export class RevealPathScene {
   ) {
     this.root.addChild(this.graphics);
   }
+  contextNode(at: Vec2): string | null {
+    const handle = this.overlay.hit(at, 9 / this.zoom());
+    if (handle) this.controller.nodeId.value = handle.id;
+    return handle ? this.controller.selectedId.value : null;
+  }
   active(): boolean {
     return this.controller.pathEditing.value;
   }
@@ -64,6 +69,7 @@ export class RevealPathScene {
   }
   down(at: Vec2): void {
     const c = this.controller;
+    c.claimSelection();
     if (c.drawing.value) {
       c.appendPoint(at);
       return;

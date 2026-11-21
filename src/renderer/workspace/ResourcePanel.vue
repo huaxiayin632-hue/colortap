@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useCommands } from '../commands/registry';
+const commands = useCommands();
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
 import type { Editor } from '../state/editor';
 import { formatTime } from '../../core/timing';
@@ -115,7 +117,10 @@ function resize(index: number, value: number) {
                 </template>
                 <div v-else class="asset-empty">
                   <p>先为工程添加一首音乐</p>
-                  <button :disabled="editor.busy.value" @click="editor.importMusic()">
+                  <button
+                    @click="commands.run('import.music')"
+                    :disabled="!commands.enabled('import.music')"
+                  >
                     导入音乐
                   </button>
                 </div>

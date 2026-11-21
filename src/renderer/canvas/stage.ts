@@ -1,3 +1,4 @@
+import type { CommandTarget } from '../commands/context';
 // Pixi's static uniform adapters support the strict CSP without enabling string evaluation.
 import 'pixi.js/unsafe-eval';
 import './alpha-mask-pipe';
@@ -324,6 +325,19 @@ export class EditorStage {
         this.app.canvas.releasePointerCapture(event.pointerId);
     }
   };
+  contextTarget(event: MouseEvent): CommandTarget {
+    const at = this.eventWorld(event);
+    if (this.revealScene?.active()) {
+      const id = this.revealScene.contextNode(this.artPoint(at));
+      return id ? { kind: 'reveal', ids: [id] } : null;
+    }
+    if (this.chartActive()) {
+      const id = this.chartScene?.contextTarget(at);
+      return id ? { kind: 'notes', ids: [id] } : null;
+    }
+    const id = this.scene?.hit(this.artPoint(at));
+    return id ? { kind: 'layer', ids: [id] } : null;
+  }
   private eventWorld(event: MouseEvent): Vec2 {
     const rect = this.app.canvas.getBoundingClientRect();
     return this.viewport.toWorld({ x: event.clientX - rect.left, y: event.clientY - rect.top });

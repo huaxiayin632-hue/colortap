@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useCommands } from '../commands/registry';
+const commands = useCommands();
 import { computed } from 'vue';
 import type { Editor } from '../state/editor';
 import { cameraEnabled } from '../../core/camera';
@@ -7,18 +9,6 @@ import EasingEditor from './EasingEditor.vue';
 import { spanUs } from '../../core/chart';
 const props = defineProps<{ editor: Editor }>(),
   c = props.editor.camera;
-function copyShake() {
-  const s = c.shake.value;
-  if (s)
-    props.editor.edit({
-      type: 'put-shake',
-      shake: {
-        ...s,
-        id: crypto.randomUUID(),
-        at: { basis: 'time', timeUs: props.editor.tempo.value.resolve(s.at) + 500000 },
-      },
-    });
-}
 const p = computed(() => props.editor.project.value),
   key = computed(() => c.key.value),
   shake = computed(() => c.shake.value),
@@ -62,9 +52,13 @@ function tool(value: 'none' | 'pan' | 'pivot') {
       缩放中心</label
     >
     <div class="note-actions">
-      <button :disabled="disabled" @click="c.add()">添加镜头关键帧</button
-      ><button :disabled="disabled" @click="c.addShake()">添加节拍震动</button
-      ><button :disabled="disabled" @click="c.reset()">重置镜头构图</button>
+      <button @click="commands.run('camera.add')" :disabled="!commands.enabled('camera.add')">
+        添加镜头关键帧</button
+      ><button @click="commands.run('camera.shake')" :disabled="!commands.enabled('camera.shake')">
+        添加节拍震动</button
+      ><button @click="commands.run('camera.reset')" :disabled="!commands.enabled('camera.reset')">
+        重置镜头构图
+      </button>
     </div>
     <div class="note-actions">
       <button
@@ -101,7 +95,13 @@ function tool(value: 'none' | 'pan' | 'pivot') {
         {{ (editor.tempo.value.resolve(k.at) / 1e6).toFixed(3) }} 秒 · {{ k.zoom.toFixed(2) }}×
       </button>
     </div>
-    <template v-if="key">
+    <div
+      v-if="key"
+      @pointerdown.capture="editor.claimTarget({ kind: 'camera', ids: [key.id] })"
+      @keydown.capture="
+        $event.key !== 'Tab' && editor.claimTarget({ kind: 'camera', ids: [key.id] })
+      "
+    >
       <label class="stacked-label"
         >关键帧时间 / 秒<NumberField
           aria-label="镜头关键帧时间"
@@ -177,25 +177,37 @@ function tool(value: 'none' | 'pan' | 'pivot') {
         @change="c.patch({ easingToNext: $event })"
       />
       <div class="note-actions">
-        <button :disabled="disabled" @click="c.copy()">复制镜头关键帧</button
-        ><button :disabled="disabled" @click="c.remove()">删除镜头关键帧</button>
+        <button
+          @click="commands.run('object.duplicate', { kind: 'camera', ids: [key.id] })"
+          :disabled="!commands.enabled('object.duplicate', { kind: 'camera', ids: [key.id] })"
+        >
+          复制镜头关键帧</button
+        ><button
+          @click="commands.run('object.delete', { kind: 'camera', ids: [key.id] })"
+          :disabled="!commands.enabled('object.delete', { kind: 'camera', ids: [key.id] })"
+        >
+          删除镜头关键帧
+        </button>
       </div>
-    </template>
+    </div>
     <h3>震动片段</h3>
     <div class="camera-key-list">
       <button
         v-for="s in Object.values(p.camera.shakes ?? {})"
         :key="s.id"
         :data-shake-id="s.id"
-        @click="
-          c.selectedId.value = null;
-          c.selectedShake.value = s.id;
-        "
+        @click="c.chooseShake(s.id)"
       >
         {{ (editor.tempo.value.resolve(s.at) / 1e6).toFixed(3) }} 秒 · 震动
       </button>
     </div>
-    <template v-if="shake">
+    <div
+      v-if="shake"
+      @pointerdown.capture="editor.claimTarget({ kind: 'shake', ids: [shake.id] })"
+      @keydown.capture="
+        $event.key !== 'Tab' && editor.claimTarget({ kind: 'shake', ids: [shake.id] })
+      "
+    >
       <div class="two-fields">
         <label
           >时间 / 秒<NumberField
@@ -266,12 +278,19 @@ function tool(value: 'none' | 'pan' | 'pivot') {
         /></label>
       </div>
       <div class="note-actions">
-        <button :disabled="disabled" @click="copyShake">复制震动</button
-        ><button :disabled="disabled" @click="editor.edit({ type: 'delete-shake', id: shake.id })">
+        <button
+          @click="commands.run('object.duplicate', { kind: 'shake', ids: [shake.id] })"
+          :disabled="!commands.enabled('object.duplicate', { kind: 'shake', ids: [shake.id] })"
+        >
+          复制震动</button
+        ><button
+          @click="commands.run('object.delete', { kind: 'shake', ids: [shake.id] })"
+          :disabled="!commands.enabled('object.delete', { kind: 'shake', ids: [shake.id] })"
+        >
           删除震动
         </button>
       </div>
-    </template>
+    </div>
     <output
       data-testid="camera-state"
       :data-x="c.pose.value.position.x"

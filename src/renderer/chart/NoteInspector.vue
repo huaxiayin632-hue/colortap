@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useCommands } from '../commands/registry';
+const commands = useCommands();
 import { computed, ref, watch } from 'vue';
 import { hasRevealPath } from '../../core/reveal';
 import type { Editor } from '../state/editor';
@@ -79,6 +81,8 @@ function nodeMode(value: string): void {
     v-if="c.selected.value.length"
     class="property-section note-inspector"
     aria-label="音符属性"
+    @pointerdown.capture="c.claimSelection()"
+    @keydown.capture="$event.key !== 'Tab' && c.claimSelection()"
   >
     <h2>
       {{
@@ -92,9 +96,26 @@ function nodeMode(value: string): void {
       }}
     </h2>
     <div class="note-actions">
-      <button :disabled="disabled" @click="c.duplicate()" title="Ctrl+D">复制</button>
-      <button :disabled="disabled" @click="c.removeNotes()">删除音符</button>
-      <button :disabled="disabled" @click="c.selectAll()">全选</button>
+      <button
+        @click="commands.run('object.duplicate', { kind: 'notes', ids: [...c.selected.value] })"
+        title="Ctrl+D"
+        :disabled="
+          !commands.enabled('object.duplicate', { kind: 'notes', ids: [...c.selected.value] })
+        "
+      >
+        复制
+      </button>
+      <button
+        @click="commands.run('object.delete', { kind: 'notes', ids: [...c.selected.value] })"
+        :disabled="
+          !commands.enabled('object.delete', { kind: 'notes', ids: [...c.selected.value] })
+        "
+      >
+        删除音符
+      </button>
+      <button @click="commands.run('notes.all')" :disabled="!commands.enabled('notes.all')">
+        全选
+      </button>
     </div>
     <template v-if="note">
       <label class="stacked-label"
@@ -306,15 +327,29 @@ function nodeMode(value: string): void {
           </select></label
         >
         <div class="note-actions">
-          <button :disabled="disabled" @click="c.setTool('path')">编辑路径</button
+          <button
+            @click="commands.run('path.edit', { kind: 'notes', ids: [...c.selected.value] })"
+            :disabled="
+              !commands.enabled('path.edit', { kind: 'notes', ids: [...c.selected.value] })
+            "
+          >
+            编辑路径</button
           ><button
             :disabled="disabled"
             :aria-pressed="c.appendMode.value"
             @click="c.toggleAppend()"
           >
             {{ c.appendMode.value ? '结束追加' : '追加拐点' }}</button
-          ><button :disabled="disabled" @click="c.addNode()">添加节点</button
-          ><button :disabled="disabled || !node" @click="c.deleteNode()">删除节点</button>
+          ><button @click="commands.run('path.add')" :disabled="!commands.enabled('path.add')">
+            添加节点</button
+          ><button
+            @click="commands.run('path.delete', { kind: 'notes', ids: [...c.selected.value] })"
+            :disabled="
+              !commands.enabled('path.delete', { kind: 'notes', ids: [...c.selected.value] })
+            "
+          >
+            删除节点
+          </button>
         </div>
         <label class="stacked-label"
           >路径节点<select
@@ -378,7 +413,12 @@ function nodeMode(value: string): void {
               /></label>
             </div>
             <div class="note-actions">
-              <button :disabled="disabled" @click="c.smoothNode()">平滑此节点</button>
+              <button
+                @click="commands.run('path.smooth')"
+                :disabled="!commands.enabled('path.smooth')"
+              >
+                平滑此节点
+              </button>
             </div>
             <select
               aria-label="控制柄模式"

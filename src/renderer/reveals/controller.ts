@@ -16,6 +16,7 @@ import type { ChartController } from '../chart/controller';
 import { sameProjectParts } from '../../core/project';
 
 interface RevealHost {
+  onSelect?(id: string): void;
   project(): Project;
   chart: ChartController;
   commit(command: RevealCommand | ChartCommand | EditCommand): boolean;
@@ -78,6 +79,7 @@ export function createReveals(host: RevealHost) {
   function choose(id: string): void {
     cancel();
     selectedId.value = id;
+    host.onSelect?.(id);
     override.value = null;
   }
   function defaultPath(layerId: string): BezierPath {
@@ -264,13 +266,18 @@ export function createReveals(host: RevealHost) {
     if (clip && hasRevealPath(clip.effect) && clip.effect.linkedSliderId)
       useSlider(clip.effect.linkedSliderId, false);
   }
+  function claimSelection() {
+    if (selectedId.value) host.onSelect?.(selectedId.value);
+  }
   function editPath(): void {
+    if (selectedId.value) host.onSelect?.(selectedId.value);
     host.chart.cancelGesture();
     pathEditing.value = true;
     drawing.value = false;
     nodeId.value ??= path.value?.nodes[0].id ?? null;
   }
   function startDrawing(): void {
+    claimSelection();
     editPath();
     drawing.value = true;
     draftPoints.value = [];
@@ -393,6 +400,7 @@ export function createReveals(host: RevealHost) {
           });
   }
   return {
+    claimSelection,
     document,
     selectedId,
     selected,

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useCommands } from '../commands/registry';
+const commands = useCommands();
 import { computed, ref, watch } from 'vue';
 import type { Editor } from '../state/editor';
 import type { Easing, RevealEffect, Trigger } from '../../shared/models';
@@ -184,7 +186,6 @@ function smooth() {
           :data-reveal-id="item.id"
           :class="{ selected: r.selectedId.value === item.id }"
           @click="r.choose(item.id)"
-          @keydown.delete.prevent.stop="r.remove(item.id)"
         >
           <span>{{ editor.project.value.layers[item.layerId]?.name }}</span
           ><small
@@ -195,10 +196,10 @@ function smooth() {
         <button
           class="reveal-delete"
           :data-reveal-delete="item.id"
-          :disabled="disabled"
           :aria-label="`删除绑定 ${editor.project.value.layers[item.layerId]?.name}`"
           title="删除此绑定，可撤销"
-          @click.stop="r.remove(item.id)"
+          @click.stop="commands.run('object.delete', { kind: 'reveal', ids: [item.id] })"
+          :disabled="!commands.enabled('object.delete', { kind: 'reveal', ids: [item.id] })"
         >
           ×
         </button>
@@ -217,6 +218,10 @@ function smooth() {
         :data-outline-progress="state?.outline ? state.progress : 0"
         :data-layer-progress="state?.outline?.layerProgress ?? 0"
         data-testid="reveal-state"
+        @pointerdown.capture="editor.claimTarget({ kind: 'reveal', ids: [clip.id] })"
+        @keydown.capture="
+          $event.key !== 'Tab' && editor.claimTarget({ kind: 'reveal', ids: [clip.id] })
+        "
       >
         <strong>{{ target?.name }}</strong
         ><span
@@ -572,12 +577,20 @@ function smooth() {
         </p>
         <div class="note-actions">
           <button
-            :disabled="disabled"
             :aria-pressed="r.pathEditing.value"
-            @click="r.pathEditing.value ? r.cancel() : r.editPath()"
+            @click="commands.run('reveal.path', { kind: 'reveal', ids: [r.selectedId.value!] })"
+            :disabled="
+              !commands.enabled('reveal.path', { kind: 'reveal', ids: [r.selectedId.value!] })
+            "
           >
             {{ r.pathEditing.value ? '结束显现路径编辑' : '编辑显现路径' }}</button
-          ><button :disabled="disabled" @click="r.startDrawing()">独立绘制路径</button
+          ><button
+            @click="commands.run('reveal.draw', { kind: 'reveal', ids: [r.selectedId.value!] })"
+            :disabled="
+              !commands.enabled('reveal.draw', { kind: 'reveal', ids: [r.selectedId.value!] })
+            "
+          >
+            独立绘制路径</button
           ><button :disabled="disabled" @click="r.reverse()">反转显现路径</button>
         </div>
         <template v-if="r.pathEditing.value && r.path.value">
@@ -589,7 +602,10 @@ function smooth() {
             }}
           </p>
           <div v-if="r.drawing.value" class="note-actions">
-            <button :disabled="r.draftPoints.value.length < 2" @click="r.finishDrawing()">
+            <button
+              @click="commands.run('path.finish')"
+              :disabled="!commands.enabled('path.finish')"
+            >
               完成显现路径
             </button>
           </div>
@@ -611,9 +627,20 @@ function smooth() {
               </select></label
             >
             <div class="note-actions">
-              <button @click="r.addNode()">显现路径添加节点</button
+              <button
+                @click="commands.run('reveal.addNode')"
+                :disabled="!commands.enabled('reveal.addNode')"
+              >
+                显现路径添加节点</button
               ><button :disabled="!r.node.value" @click="smooth">平滑显现节点</button
-              ><button :disabled="!r.node.value" @click="r.deleteNode()">删除显现节点</button>
+              ><button
+                @click="commands.run('path.delete', { kind: 'reveal', ids: [r.selectedId.value!] })"
+                :disabled="
+                  !commands.enabled('path.delete', { kind: 'reveal', ids: [r.selectedId.value!] })
+                "
+              >
+                删除显现节点
+              </button>
             </div></template
           >
         </template>
@@ -639,7 +666,14 @@ function smooth() {
         /></label>
         <div class="note-actions">
           <button @click="r.override.value = null">跟随播放头</button
-          ><button :disabled="disabled" @click="r.remove()">删除显现绑定</button>
+          ><button
+            @click="commands.run('object.delete', { kind: 'reveal', ids: [r.selectedId.value!] })"
+            :disabled="
+              !commands.enabled('object.delete', { kind: 'reveal', ids: [r.selectedId.value!] })
+            "
+          >
+            删除显现绑定
+          </button>
         </div>
       </template>
       <p class="help-text">
