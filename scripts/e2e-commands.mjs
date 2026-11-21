@@ -403,6 +403,10 @@ try {
     await canvas.dispatchEvent('compositionend', { data: '中文' });
     await canvas.dispatchEvent('keydown', { key: 'Delete', isComposing: true, bubbles: true });
     await canvas.dispatchEvent('keydown', { key: 'Delete', keyCode: 229, bubbles: true });
+    await page
+      .locator(`.layer-row[data-layer-id="${layerId}"]`)
+      .dispatchEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true });
+    assert.match(await target(), /音符/);
     await page.getByLabel('音符吸附模式').focus();
     await page.keyboard.press('Delete');
     await button('新建').click();

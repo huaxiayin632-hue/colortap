@@ -122,7 +122,12 @@ function drop(event: DragEvent, layer: Layer, parentId: string | null): void {
       :draggable="!readOnly && !isLocked(editor.project.value, layer.id)"
       tabindex="0"
       @click="editor.selectLayer(layer.id)"
-      @keydown.enter="!$event.isComposing && !$event.repeat && editor.selectLayer(layer.id)"
+      @keydown.enter="
+        !$event.isComposing &&
+        $event.keyCode !== 229 &&
+        !$event.repeat &&
+        editor.selectLayer(layer.id)
+      "
       @dragstart="start($event, layer.id)"
       @dragend="
         dragging = null;
