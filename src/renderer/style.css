@@ -99,7 +99,7 @@ h2 {
 }
 .editor-shell {
   height: 100dvh;
-  min-width: 1080px;
+  min-width: 0;
   display: grid;
   grid-template-rows: 88px minmax(200px, 1fr) 302px 27px;
 }

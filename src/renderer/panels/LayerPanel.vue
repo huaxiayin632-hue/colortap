@@ -78,10 +78,6 @@ function nudge(direction: number): void {
 }
 </script>
 <template>
-  <header class="panel-header">
-    <strong>图层</strong
-    ><span class="count">{{ Object.keys(editor.project.value.layers).length }}</span>
-  </header>
   <div class="layer-actions">
     <button :disabled="readOnly" @click="editor.importImage()">＋ 导入 PSD / PNG</button
     ><button

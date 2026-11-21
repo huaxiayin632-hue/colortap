@@ -1,0 +1,226 @@
+.editor-shell > .main-toolbar {
+  grid-row: 1;
+}
+.workspace-toolbar {
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: #292d32;
+  font-size: 12px;
+}
+.workspace-toolbar button {
+  padding: 3px 12px;
+}
+.workspace-toolbar button[aria-pressed='true'] {
+  color: var(--accent);
+  background: #39494c;
+}
+.editor-shell > .workspace {
+  grid-row: 3;
+}
+.editor-shell > .timeline-divider {
+  grid-row: 4;
+}
+.editor-shell > .timeline-panel,
+.editor-shell > .timeline-rail {
+  grid-row: 5;
+}
+.editor-shell > .status-bar {
+  grid-row: 6;
+}
+.workspace > * {
+  grid-row: 1;
+}
+.workspace > .left-panel,
+.workspace > .left-rail {
+  grid-column: 1;
+}
+.workspace > .left-divider {
+  grid-column: 2;
+}
+.workspace > .canvas-panel {
+  grid-column: 3;
+}
+.workspace > .right-divider {
+  grid-column: 4;
+}
+.workspace > .inspector,
+.workspace > .right-rail {
+  grid-column: 5;
+}
+.panel-divider {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 0 0 6px;
+  background: #25282d;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 4;
+}
+.panel-divider::after {
+  content: '';
+  position: absolute;
+  width: 28px;
+  height: 2px;
+  left: calc(50% - 14px);
+  top: calc(50% - 1px);
+  background: #697782;
+  border-radius: 2px;
+}
+.panel-divider.vertical {
+  cursor: ew-resize;
+}
+.panel-divider.vertical::after {
+  width: 2px;
+  height: 28px;
+  left: calc(50% - 1px);
+  top: calc(50% - 14px);
+}
+.panel-divider:hover:not(.disabled),
+.panel-divider.active,
+.panel-divider:focus-visible {
+  background: #45616a;
+  outline: none;
+}
+.panel-divider.disabled {
+  cursor: default;
+}
+.panel-divider.disabled::after {
+  opacity: 0.2;
+}
+.panel-rail,
+.timeline-rail {
+  background: var(--panel);
+  border-radius: 0;
+  font-size: 12px;
+}
+.panel-rail {
+  writing-mode: vertical-rl;
+  padding: 10px 4px;
+  text-align: start;
+}
+.timeline-rail {
+  padding: 3px 14px;
+  text-align: left;
+}
+.resource-header {
+  height: 32px;
+  min-height: 32px;
+}
+.resource-sections {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.resource-section {
+  min-height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.section-header {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 8px 0 3px;
+  gap: 4px;
+}
+.section-toggle {
+  flex: 1;
+  text-align: left;
+  padding: 4px 6px;
+}
+.resource-section-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.resource-section-body .layer-area {
+  flex: 1 0 55px;
+  min-height: 55px;
+}
+.resource-section-body .layer-actions {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.resource-section-body .asset-area {
+  flex: 1;
+  min-height: 0;
+}
+.resource-section-body .sfx-library {
+  flex: 1 0 auto;
+  min-height: 0;
+  max-height: none;
+  border: 0;
+  overflow: visible;
+}
+.resource-section-body .sfx-asset-list {
+  max-height: none;
+  overflow: visible;
+  flex: 1;
+}
+.sfx-import {
+  align-self: flex-start;
+  margin: 4px 8px;
+}
+.left-panel > .left-footer {
+  flex: 0 0 24px;
+  padding: 4px 10px;
+  font-size: 10px;
+}
+.canvas-panel .canvas-header {
+  flex-shrink: 0;
+  overflow-x: auto;
+  gap: 6px;
+}
+.canvas-header > span,
+.canvas-controls {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.canvas-panel .chart-toolbar {
+  flex-shrink: 0;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+.canvas-panel .canvas-footer {
+  flex-shrink: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.inspector > .panel-header {
+  gap: 3px;
+}
+.inspector > .panel-header strong {
+  flex: 1;
+  font-size: 12px;
+}
+.inspector > .panel-header button {
+  padding: 4px;
+  font-size: 11px;
+}
+.timeline-toolbar {
+  overflow-x: auto;
+}
+.timeline-toolbar > * {
+  flex-shrink: 0;
+}
+.toolbar-row {
+  overflow-x: auto;
+}
+.toolbar-row > * {
+  flex-shrink: 0;
+}
+.toolbar-row > .project-name {
+  flex-shrink: 1;
+  min-width: 0;
+}

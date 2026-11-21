@@ -10,10 +10,7 @@ const disabled = computed(
 </script>
 <template>
   <section class="sfx-library" aria-label="音效素材库">
-    <header class="panel-header">
-      <strong>音效素材</strong><span class="count">{{ assets.length }}</span
-      ><button :disabled="disabled" @click="editor.importSound()">＋ 音效</button>
-    </header>
+    <button class="sfx-import" :disabled="disabled" @click="editor.importSound()">＋ 音效</button>
     <div class="sfx-asset-list">
       <p v-if="!assets.length" class="help-text">导入 WAV / MP3 / OGG，再给音符或演出绑定。</p>
       <div

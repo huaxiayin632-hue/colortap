@@ -5,19 +5,41 @@ import { formatTime } from '../core/timing';
 import CanvasPanel from './panels/CanvasPanel.vue';
 import CommitInput from './panels/CommitInput.vue';
 import NumberField, { numberGestureKey } from './panels/NumberField.vue';
-import LayerPanel from './panels/LayerPanel.vue';
+import ResourcePanel from './workspace/ResourcePanel.vue';
+import PanelDivider from './workspace/PanelDivider.vue';
+import { useWorkspace } from './workspace/use-workspace';
+import type { SectionId } from './workspace/layout';
 import LayerInspector from './panels/LayerInspector.vue';
 import TimelinePanel from './timeline/TimelinePanel.vue';
 import NoteInspector from './chart/NoteInspector.vue';
 import PlaytestPanel from './chart/PlaytestPanel.vue';
 import RevealPanel from './reveals/RevealPanel.vue';
-import SfxLibrary from './audio/SfxLibrary.vue';
 import SoundPanel from './audio/SoundPanel.vue';
 import AnalysisPanel from './audio/AnalysisPanel.vue';
 import CameraPanel from './camera/CameraPanel.vue';
 import type { ChartTool } from './chart/controller';
 
 const editor = createEditor();
+const workspace = useWorkspace();
+const { layout, size: layoutSize, focus: canvasFocus, storageError } = workspace;
+function weights(values: Partial<Record<SectionId, number>>) {
+  for (const [id, weight] of Object.entries(values))
+    layout.value.sections[id as SectionId].weight = weight!;
+}
+const shellStyle = computed(() => ({
+  gridTemplateRows:
+    '88px 34px minmax(0, 1fr) ' +
+    layoutSize.value.timelineHandle +
+    'px ' +
+    layoutSize.value.timeline +
+    'px 27px',
+}));
+const workspaceStyle = computed(() => ({
+  gridTemplateColumns:
+    [layoutSize.value.left, layoutSize.value.leftHandle].map((v) => v + 'px').join(' ') +
+    ' minmax(0, 1fr) ' +
+    [layoutSize.value.rightHandle, layoutSize.value.right].map((v) => v + 'px').join(' '),
+}));
 provide(numberGestureKey, { begin: editor.beginGesture, end: editor.endGesture });
 const inspectorTab = ref<'objects' | 'sounds' | 'camera' | 'music'>('objects');
 const inspectorScroll = ref<HTMLElement>();
@@ -59,13 +81,6 @@ const memoryLabel = computed(() =>
   editor.performanceSample.value ? `${(totalPrivateMiB.value / 1024).toFixed(0)} MiB` : '采样中',
 );
 const musicDuration = computed(() => formatTime(editor.playback.value.durationUs));
-const audioAssets = computed(() =>
-  Object.values(editor.project.value.assets)
-    .filter((asset) => asset.kind === 'audio' && asset.audioRole !== 'sfx')
-    .sort(
-      (a, b) => Number(b.id === editor.music.value?.id) - Number(a.id === editor.music.value?.id),
-    ),
-);
 const projectPath = computed(() => editor.session.value?.filePath ?? '尚未保存到文件');
 const snapshotLabel = computed(() =>
   editor.recoveryError.value
@@ -117,7 +132,23 @@ function keydown(event: KeyboardEvent): void {
         ['range', 'checkbox', 'radio', 'button'].includes(target.type)
       )) ||
     target.isContentEditable;
-  const modal = Boolean(document.querySelector('[role="dialog"]'));
+  const modal = Boolean(document.querySelector('.modal-backdrop, [role="dialog"]'));
+  // Tab remains normal focus navigation everywhere except the canvas itself.
+  if (
+    event.key === 'Tab' &&
+    !event.shiftKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    !event.repeat &&
+    !modal &&
+    !editor.busy.value &&
+    target.matches('.canvas-host, .canvas-host canvas')
+  ) {
+    event.preventDefault();
+    canvasFocus.value = !canvasFocus.value;
+    return;
+  }
   if (
     !editingText &&
     !modal &&
@@ -290,7 +321,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="editor-shell" :aria-busy="editor.busy.value">
+  <div
+    class="editor-shell"
+    :aria-busy="editor.busy.value"
+    :style="shellStyle"
+    :data-canvas-focus="canvasFocus"
+  >
     <header class="main-toolbar">
       <div class="toolbar-row project-row">
         <div class="brand">
@@ -412,52 +448,77 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <main class="workspace">
-      <aside class="left-panel" aria-label="图层与素材">
-        <LayerPanel :editor="editor" />
-        <header class="panel-header">
-          <strong>素材</strong><span class="count">{{ audioAssets.length }}</span>
-        </header>
-        <div class="asset-area">
-          <template v-if="audioAssets.length">
-            <div
-              v-for="asset in audioAssets"
-              :key="asset.id"
-              class="asset-item"
-              :class="{ current: asset.id === editor.music.value?.id }"
-            >
-              <span class="asset-symbol">♫</span>
-              <div class="asset-description">
-                <strong :title="asset.originalName">{{ asset.originalName }}</strong>
-                <small
-                  >{{ asset.id === editor.music.value?.id ? '当前音乐 · ' : ''
-                  }}{{ formatTime(asset.audio?.durationUs ?? 0) }} ·
-                  {{ (asset.byteLength / 1024 / 1024).toFixed(2) }} MB</small
-                >
-              </div>
-              <button
-                class="delete-button"
-                :aria-label="`删除音频 ${asset.originalName}`"
-                title="从工程移除音频，可撤销"
-                :disabled="editor.busy.value || editor.chart.mode.value !== 'edit'"
-                @click="editor.deleteAudio(asset.id)"
-              >
-                删除
-              </button>
-            </div>
-          </template>
-          <div v-else class="asset-empty">
-            <p>先为工程添加一首音乐</p>
-            <button :disabled="editor.busy.value" @click="editor.importMusic()">导入音乐</button>
-          </div>
-        </div>
-        <SfxLibrary :editor="editor" />
-        <div class="left-footer">素材原文件随工程保存</div>
-      </aside>
-
+    <nav class="workspace-toolbar" aria-label="工作区布局">
+      <span class="muted">布局</span>
+      <button title="优先时间轴与音符编辑空间" @click="workspace.preset('chart')">谱面</button>
+      <button title="优先图层与属性空间" @click="workspace.preset('show')">演出</button>
+      <button title="优先画布空间" @click="workspace.preset('camera')">镜头</button>
+      <span class="toolbar-spacer" />
+      <span v-if="storageError" role="status" class="error-text">布局暂未保存到本机</span>
+      <button
+        :aria-pressed="canvasFocus"
+        title="在画布上按 Tab 可切换"
+        @click="canvasFocus = !canvasFocus"
+      >
+        {{ canvasFocus ? '退出专注画布' : '专注画布' }}
+      </button>
+      <button title="恢复谱面布局的默认尺寸和展开状态" @click="workspace.preset('chart')">
+        重置布局
+      </button>
+    </nav>
+    <main class="workspace" :style="workspaceStyle">
+      <ResourcePanel
+        v-show="!canvasFocus && !layout.collapsed.left"
+        :editor="editor"
+        :layout="layout"
+        @toggle="workspace.toggle('left')"
+        @section-toggle="layout.sections[$event].collapsed = !layout.sections[$event].collapsed"
+        @weights="weights"
+        @resize-start="workspace.beginResize"
+        @resize-end="workspace.endResize"
+      />
+      <button
+        v-show="!canvasFocus && layout.collapsed.left"
+        class="panel-rail left-rail"
+        aria-label="展开左栏"
+        @click="workspace.toggle('left')"
+      >
+        › 图层与素材
+      </button>
+      <PanelDivider
+        v-show="!canvasFocus && !layout.collapsed.left"
+        class="left-divider"
+        label="左栏宽度"
+        vertical
+        :value="layoutSize.left"
+        :min="220"
+        @resize="workspace.setSize('left', $event)"
+        @start="workspace.beginResize"
+        @end="workspace.endResize"
+      />
       <CanvasPanel :editor="editor" />
 
-      <aside class="inspector" aria-label="属性">
+      <PanelDivider
+        v-show="!canvasFocus && !layout.collapsed.right"
+        class="right-divider"
+        label="右栏宽度"
+        vertical
+        reverse
+        :value="layoutSize.right"
+        :min="240"
+        @resize="workspace.setSize('right', $event)"
+        @start="workspace.beginResize"
+        @end="workspace.endResize"
+      />
+      <button
+        v-show="!canvasFocus && layout.collapsed.right"
+        class="panel-rail right-rail"
+        aria-label="展开右栏"
+        @click="workspace.toggle('right')"
+      >
+        ‹ 属性
+      </button>
+      <aside v-show="!canvasFocus && !layout.collapsed.right" class="inspector" aria-label="属性">
         <header class="panel-header">
           <strong>{{
             editor.chart.selected.value.length
@@ -475,6 +536,7 @@ onBeforeUnmount(() => {
           >
             取消选择
           </button>
+          <button aria-label="收起右栏" @click="workspace.toggle('right')">›</button>
         </header>
         <div ref="inspectorScroll" class="inspector-scroll">
           <div class="production-tabs">
@@ -631,7 +693,30 @@ onBeforeUnmount(() => {
       </aside>
     </main>
 
-    <TimelinePanel :editor="editor" />
+    <PanelDivider
+      v-show="!canvasFocus && !layout.collapsed.timeline"
+      class="timeline-divider"
+      label="时间轴高度"
+      reverse
+      :value="layoutSize.timeline"
+      :min="140"
+      @resize="workspace.setSize('timeline', $event)"
+      @start="workspace.beginResize"
+      @end="workspace.endResize"
+    />
+    <TimelinePanel
+      v-show="!canvasFocus && !layout.collapsed.timeline"
+      :editor="editor"
+      @collapse="workspace.toggle('timeline')"
+    />
+    <button
+      v-show="!canvasFocus && layout.collapsed.timeline"
+      class="timeline-rail"
+      aria-label="展开时间轴"
+      @click="workspace.toggle('timeline')"
+    >
+      ▴ 时间轴
+    </button>
 
     <footer class="status-bar">
       <span
