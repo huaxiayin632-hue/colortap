@@ -336,8 +336,11 @@ try {
     await page.locator(`.camera-key-list [data-camera-id="${cameraId}"]`).click();
     await page.getByLabel('镜头X', { exact: true }).focus();
     await right(note(circles[0].id));
+    await page.keyboard.press('Control+z');
+    assert.equal(await menu().evaluate((el) => el.contains(document.activeElement)), true);
     await page.keyboard.press('Escape');
     assert.match(await target(), /音符/);
+    assert.deepEqual((await save()).camera, baseline.camera);
   });
   await check('画布右键按已有命中规则选择，不创建音符；空白菜单没有删除', async () => {
     await note(circles[0].id).click();
@@ -405,8 +408,15 @@ try {
     await button('新建').click();
     await page.getByLabel('新工程名称').press('Control+s');
     await page.keyboard.press('Delete');
-    assert.ok(await page.getByRole('dialog').isVisible());
+    const newDialog = page.getByRole('dialog', { name: '新建工程' });
+    assert.ok(await newDialog.isVisible());
+    await button('取消').focus();
+    for (const key of ['Control+z', 'Control+y', 'Delete', 'Control+d', 'Tab', 'Shift+Tab']) {
+      await page.keyboard.press(key);
+      assert.equal(await newDialog.evaluate((el) => el.contains(document.activeElement)), true);
+    }
     await button('取消').click();
+    assert.equal((await save()).name, baseline.name);
     assert.deepEqual((await save()).notes, baseline.notes);
     assert.equal(await page.getByRole('dialog').count(), 0);
   });
@@ -419,8 +429,14 @@ try {
       .evaluateAll((rows) => rows.map((r) => ({ id: r.dataset.command, text: r.textContent })));
     assert.ok(helpRows.some((row) => row.id === 'object.delete' && row.text.includes('Delete')));
     assert.ok(helpRows.some((row) => row.id === 'workspace.focus' && row.text.includes('Tab')));
-    for (const key of ['Delete', 'Control+d', 'Control+z', 'Control+s', 'z', 'x', '?'])
+    for (const key of ['Delete', 'Control+d', 'Control+z', 'Control+s', 'z', 'x', '?']) {
       await page.keyboard.press(key);
+      assert.equal(
+        await dialog.evaluate((el) => el.contains(document.activeElement)),
+        true,
+        `Dialog keeps focus after ${key}`,
+      );
+    }
     assert.ok(await dialog.isVisible());
     await page.screenshot({ path: path.join(directory, 'shortcuts.png') });
     if (recording) await page.waitForTimeout(1400);
@@ -430,6 +446,7 @@ try {
     await dialog.waitFor();
     await button('关闭快捷键一览').click();
     assert.deepEqual((await save()).notes, baseline.notes);
+    assert.equal((await save()).name, baseline.name);
     return { rows: helpRows.length };
   });
   await captureStop();

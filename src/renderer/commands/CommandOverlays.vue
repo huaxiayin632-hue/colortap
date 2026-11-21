@@ -2,7 +2,13 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Commands } from './registry';
 import type { Editor } from '../state/editor';
-import { playtestCodes, shortcutLabel, targetNames } from './context';
+import {
+  isTextTarget,
+  matchesShortcut,
+  playtestCodes,
+  shortcutLabel,
+  targetNames,
+} from './context';
 const props = defineProps<{ commands: Commands; editor: Editor }>();
 const menuElement = ref<HTMLElement>(),
   helpElement = ref<HTMLElement>();
@@ -31,6 +37,8 @@ watch(props.commands.help, async (value) => {
 function menuKey(event: KeyboardEvent) {
   event.stopPropagation();
   if (event.isComposing || event.keyCode === 229) return;
+  if (!['Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter', ' '].includes(event.key))
+    event.preventDefault();
   const buttons = [
     ...(menuElement.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []),
   ];
@@ -71,25 +79,77 @@ function outside(event: PointerEvent) {
 function resize() {
   props.commands.closeMenu();
 }
+function topDialog() {
+  return (
+    document.querySelector<HTMLElement>('.top-modal [role="dialog"]') ??
+    [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].at(-1)
+  );
+}
+function dialogControls(dialog: HTMLElement) {
+  return [
+    ...dialog.querySelectorAll<HTMLElement>('button, input, select, textarea, [tabindex]'),
+  ].filter((el) => !el.matches(':disabled') && el.tabIndex >= 0 && el.getClientRects().length);
+}
+function focusDialog(dialog: HTMLElement) {
+  const controls = dialogControls(dialog);
+  const control = controls.find((el) => el.hasAttribute('autofocus')) ?? controls[0];
+  if (control) control.focus({ preventScroll: true });
+  else {
+    dialog.tabIndex = -1;
+    dialog.focus({ preventScroll: true });
+  }
+}
+function modalKey(event: KeyboardEvent) {
+  const dialog = topDialog();
+  if (!dialog) return;
+  if (!dialog.contains(event.target as Node)) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    focusDialog(dialog);
+    return;
+  }
+  if (event.isComposing || event.keyCode === 229) return;
+  if (event.key === 'Tab') {
+    const controls = dialogControls(dialog),
+      index = controls.indexOf(document.activeElement as HTMLElement);
+    if (index < 0 || (event.shiftKey ? index === 0 : index === controls.length - 1)) {
+      event.preventDefault();
+      (event.shiftKey ? controls.at(-1) : controls[0])?.focus();
+    }
+    return;
+  }
+  // Chromium's native undo can refocus and edit the last textbox behind a dialog.
+  // Text controls retain native editing; dialog buttons retain Enter/Space/Esc.
+  if (
+    !isTextTarget(event.target) &&
+    !['Enter', ' ', 'Escape'].includes(event.key) &&
+    (props.commands.commands.some((c) => c.shortcuts.some((s) => matchesShortcut(event, s))) ||
+      playtestCodes.includes(event.code))
+  )
+    event.preventDefault();
+}
 let observer: MutationObserver;
 onMounted(() => {
   window.addEventListener('pointerdown', outside, true);
   window.addEventListener('resize', resize);
+  window.addEventListener('keydown', modalKey, true);
   // All existing dialogs also release gameplay inputs when they take over the window.
-  let dialogOpen = false;
+  let activeDialog: HTMLElement | undefined;
   observer = new MutationObserver(() => {
-    const open = Boolean(document.querySelector('[role="dialog"], .modal-backdrop'));
-    if (open && !dialogOpen) {
+    const dialog = topDialog();
+    if (dialog && dialog !== activeDialog) {
       props.editor.chart.release();
       props.commands.closeMenu(false);
+      if (!dialog.contains(document.activeElement)) focusDialog(dialog);
     }
-    dialogOpen = open;
+    activeDialog = dialog;
   });
   observer.observe(document.body, { childList: true, subtree: true });
 });
 onBeforeUnmount(() => {
   window.removeEventListener('pointerdown', outside, true);
   window.removeEventListener('resize', resize);
+  window.removeEventListener('keydown', modalKey, true);
   observer?.disconnect();
 });
 </script>
@@ -160,9 +220,7 @@ onBeforeUnmount(() => {
           </tbody>
         </table>
         <p>
-          试玩输入：{{
-            playtestCodes.map((code) => code.slice(3)).join(' / ')
-          }}
+          试玩输入：{{ playtestCodes.map((code) => code.slice(3)).join(' / ') }}
           按下判定、松开结束追踪。面板分隔条：方向键微调，Shift 加大步幅，Esc 取消拖动。
         </p>
       </section>
