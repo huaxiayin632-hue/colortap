@@ -232,6 +232,10 @@ try {
       await start();
       const dialog = page.getByRole('dialog', { name: '恢复未保存工程' });
       await dialog.waitFor();
+      await dialog.getByRole('button', { name: '暂不处理' }).focus();
+      await page.keyboard.press('Tab');
+      assert.equal(await page.locator('.editor-shell').getAttribute('data-canvas-focus'), 'false');
+      assert.ok(await dialog.isVisible(), 'Tab must not dismiss or hide the recovery prompt');
       assert(
         (await dialog.innerText()).includes(
           new Date(first.savedAt).toLocaleDateString('zh-CN').slice(0, 4),

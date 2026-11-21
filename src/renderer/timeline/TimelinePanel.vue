@@ -10,6 +10,7 @@ import SoundTrack from './SoundTrack.vue';
 import CameraTrack from './CameraTrack.vue';
 import { defaultTracks, type TrackId, type TrackLayout } from '../../shared/models';
 
+const emit = defineEmits<{ collapse: [] }>();
 const props = defineProps<{ editor: Editor }>();
 const scroller = ref<HTMLDivElement>();
 const labelScroller = ref<HTMLElement>();
@@ -170,7 +171,8 @@ function jumpToHead(): void {
 let observer: ResizeObserver | null = null;
 onMounted(() => {
   observer = new ResizeObserver(() => {
-    visibleWidth.value = scroller.value?.clientWidth ?? 1000;
+    // Hidden panels retain their viewport and scroll state until they become visible again.
+    if (scroller.value?.clientWidth) visibleWidth.value = scroller.value.clientWidth;
   });
   if (scroller.value) observer.observe(scroller.value);
 });
@@ -180,7 +182,8 @@ onBeforeUnmount(() => observer?.disconnect());
 <template>
   <section class="timeline-panel" aria-label="时间轴">
     <header class="timeline-toolbar">
-      <strong>时间轴</strong><span class="beat-readout">第 {{ beatLabel }} 拍</span>
+      <button aria-label="收起时间轴" @click="emit('collapse')">▾</button><strong>时间轴</strong
+      ><span class="beat-readout">第 {{ beatLabel }} 拍</span>
       <label
         >音符吸附
         <select
