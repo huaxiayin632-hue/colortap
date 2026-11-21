@@ -134,8 +134,15 @@ async function choose(file, save = false) {
 }
 async function property(label, value) {
   const field = page.getByLabel(label, { exact: true });
+  await field.focus();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
   await field.fill(String(value));
   await field.press('Tab');
+  assert.equal(
+    Number(await field.inputValue()),
+    Number(value),
+    `${label} must commit before snapshot checks`,
+  );
 }
 async function importPicture(file) {
   await choose(file);

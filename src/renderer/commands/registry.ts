@@ -364,6 +364,19 @@ export function createCommands(
     add('timeline.ruler.' + ruler, name + '标尺', '时间轴视图', [], available, () => {
       workspace.timeline.value.ruler = ruler;
     });
+  for (const rate of [0.25, 0.5, 0.75, 1])
+    add('play.rate.' + rate, rate + '× 播放', '播放设置', [], available, () =>
+      editor.setRate(rate),
+    );
+  add(
+    'play.loop',
+    '启用 / 停用循环',
+    '循环区间已选定',
+    [],
+    () => available() && Boolean(editor.loopRange.value),
+    () => editor.enableLoop(!editor.loopEnabled.value || editor.loopSuspended.value),
+  );
+  add('play.loopClear', '清除循环区间', '播放设置', [], available, () => editor.setLoop(null));
   add('help', '快捷键一览', '编辑器', [plain('?')], available, () => {
     editor.chart.release();
     help.value = true;

@@ -32,6 +32,7 @@ export type ChartTool = 'layers' | 'select' | 'circle' | 'hold' | 'slider' | 'pa
 interface ChartHost {
   onSelect?(ids: string[]): void;
   take?: PlaybackTake;
+  loop?(): { startUs: number; endUs: number } | null;
   sourceOnly?(): boolean;
   revealOverride?(): RevealEvaluation['override'];
   project(): Project;
@@ -272,6 +273,7 @@ export function createChart(host: ChartHost) {
                 }
               : undefined,
             take.recordTrack,
+            host.loop?.() ?? undefined,
           )
         : null;
     if (!session) event({ kind: 'session-reset', runId: crypto.randomUUID(), timeUs: at, reason });
@@ -344,9 +346,10 @@ export function createChart(host: ChartHost) {
     appendMode.value = false;
   }
   function release(): void {
+    const now = host.time();
     held.clear();
     if (session) {
-      session.input(Math.max(host.time(), session.timeUs), pointer.value, false);
+      session.input(Math.max(now, session.timeUs), pointer.value, false);
       runtime.value = session.snapshot();
     }
   }
@@ -365,19 +368,21 @@ export function createChart(host: ChartHost) {
     }
   }
   function setPointer(at: Vec2 | null): void {
+    const now = host.time();
     pointer.value = at;
     if (session && host.playing()) {
-      session.input(Math.max(host.time(), session.timeUs), at, held.size > 0);
+      session.input(Math.max(now, session.timeUs), at, held.size > 0);
       runtime.value = session.snapshot();
     }
   }
   function input(key: string, down: boolean): void {
     if (mode.value !== 'playtest') return;
+    const now = host.time();
     const pressed = down && !held.has(key);
     if (down) held.add(key);
     else held.delete(key);
     if (session && host.playing()) {
-      session.input(Math.max(host.time(), session.timeUs), pointer.value, held.size > 0, pressed);
+      session.input(Math.max(now, session.timeUs), pointer.value, held.size > 0, pressed);
       runtime.value = session.snapshot();
     }
   }
@@ -723,6 +728,10 @@ export function createChart(host: ChartHost) {
     choose,
     select,
     reset,
+    updateLoop() {
+      session?.setRange(host.loop?.() ?? undefined);
+      runtime.value = session?.snapshot() ?? null;
+    },
     update,
     release,
     setPointer,

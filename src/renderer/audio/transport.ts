@@ -1,4 +1,4 @@
-import { AnchoredClock } from '../../core/timing';
+import { AnchoredClock, type LoopRange } from '../../core/timing';
 import type { Asset } from '../../shared/models';
 import { ResourcePool, type ResourceLease } from '../../core/resources';
 
@@ -16,7 +16,6 @@ export class AudioTransport {
   private readonly clock = new AnchoredClock();
   private level = 0.8;
   private generation = 0;
-  private anchor = { contextSeconds: 0, musicUs: 0 };
   constructor(private readonly resources: ResourcePool) {}
   get buffer(): AudioBuffer | null {
     return this.music?.lease.value ?? null;
@@ -39,8 +38,32 @@ export class AudioTransport {
   get sharedContext(): AudioContext {
     return this.audioContext();
   }
-  contextTimeAt(musicUs: number): number {
-    return this.anchor.contextSeconds + (musicUs - this.anchor.musicUs) / 1_000_000;
+  get rate() {
+    return this.clock.rate;
+  }
+  get loop() {
+    return this.clock.loop;
+  }
+  contextTimeAt(musicUs: number, cycle?: number): number {
+    return this.clock.contextTimeAt(musicUs, cycle ?? this.snapshot().cycle);
+  }
+  renderPosition(seconds = this.sharedContext.currentTime) {
+    return this.clock.projection(seconds);
+  }
+  setRate(rate: number) {
+    this.generation++;
+    const at = this.context?.currentTime ?? 0;
+    this.clock.setRate(rate, at);
+    this.source?.playbackRate.setValueAtTime(rate, at);
+  }
+  setLoop(loop: LoopRange | null, destination?: number) {
+    const wasPlaying = this.clock.playing;
+    this.pause();
+    const at = this.context?.currentTime ?? 0;
+    this.clock.setLoop(null, at);
+    if (destination !== undefined) this.clock.seek(destination, at);
+    this.clock.setLoop(loop, at);
+    if (wasPlaying) this.startSource(this.clock.positionAt(at));
   }
   async decode(asset: Asset, bytes: ArrayBuffer): Promise<ResourceLease<AudioBuffer>> {
     const context = this.audioContext();
@@ -119,20 +142,24 @@ export class AudioTransport {
     const context = this.audioContext();
     await context.resume();
     if (generation !== this.generation || !this.music || this.clock.playing) return;
-    if (this.clock.positionAt(this.outputSeconds()) >= this.clock.durationUs)
-      this.clock.seek(0, context.currentTime);
-    this.startSource();
+    const position = this.clock.positionAt(context.currentTime);
+    this.startSource(position >= this.clock.durationUs ? (this.loop?.startUs ?? 0) : position);
   }
-  private startSource(): void {
+  private startSource(positionUs: number): void {
     if (!this.music || !this.context || !this.gain) return;
-    const positionUs = this.clock.positionAt(this.outputSeconds());
     this.stopSource();
     const startsAt = this.context.currentTime + 0.02;
-    this.anchor = { contextSeconds: startsAt, musicUs: positionUs };
+
     const source = this.context.createBufferSource();
     source.buffer = this.music.lease.value;
+    source.playbackRate.value = this.clock.rate;
+    if (this.clock.loop) {
+      source.loop = true;
+      source.loopStart = this.clock.loop.startUs / 1e6;
+      source.loopEnd = this.clock.loop.endUs / 1e6;
+    }
     source.connect(this.gain);
-    this.clock.seek(positionUs, startsAt);
+    this.clock.seek(positionUs, this.context.currentTime);
     this.clock.start(startsAt);
     source.start(startsAt, positionUs / 1_000_000);
     this.source = source;
@@ -157,16 +184,19 @@ export class AudioTransport {
     const wasPlaying = this.clock.playing;
     this.pause();
     this.clock.seek(timeUs, this.context?.currentTime ?? 0);
-    if (wasPlaying && this.music && timeUs < this.clock.durationUs) this.startSource();
+    if (wasPlaying && this.music && timeUs < this.clock.durationUs)
+      this.startSource(this.clock.positionAt(this.context!.currentTime));
   }
   snapshot() {
-    const timeUs = this.clock.positionAt(this.outputSeconds());
-    if (this.clock.playing && timeUs >= this.clock.durationUs) {
+    const { timeUs, cycle } = this.clock.projection(this.outputSeconds());
+    if (this.clock.playing && !this.clock.loop && timeUs >= this.clock.durationUs) {
       this.pause();
       this.clock.seek(this.clock.durationUs, this.context?.currentTime ?? 0);
     }
     return {
       timeUs,
+      cycle,
+      rate: this.clock.rate,
       durationUs: this.clock.durationUs,
       playing: this.clock.playing,
       ready: this.ready,

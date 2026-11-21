@@ -51,7 +51,7 @@ export type NoteEvent = {
   timelineProgress?: number;
   reason?: TrackReason | 'head-miss' | 'insufficient-tracking';
 };
-export type ResetReason = 'seek' | 'restart' | 'mode' | 'document';
+export type ResetReason = 'seek' | 'restart' | 'mode' | 'document' | 'loop';
 export type GameplayEvent =
   NoteEvent | { kind: 'session-reset'; runId: string; timeUs: number; reason?: ResetReason };
 export function circleGrade(
@@ -67,6 +67,7 @@ interface RuntimeNote {
   endUs: number;
   path?: ArcPath;
   result: NoteResult;
+  rangeSkipped?: boolean;
   motion?: {
     cell: number;
     epoch: number;
@@ -119,6 +120,7 @@ export class PlaySession {
     private readonly emit: (event: GameplayEvent) => void = () => {},
     private readonly space?: MovingNoteSpace,
     private readonly recordTrack?: (noteId: string, intervals: readonly TrackInterval[]) => void,
+    range?: { startUs: number; endUs: number },
   ) {
     const tempo = new TempoMap(project.timing);
     this.cursorUs = startUs;
@@ -149,9 +151,23 @@ export class PlaySession {
           ];
         }),
     );
+    this.setRange(range);
     this.emit({ kind: 'session-reset', runId: this.runId, timeUs: startUs });
     this.moving =
       !!space && [...this.notes.values()].some((n) => n.note.kind === 'slider' && n.note.binding);
+  }
+  setRange(range?: { startUs: number; endUs: number }): void {
+    for (const n of this.notes.values()) {
+      const outside = range && (n.startUs < range.startUs || n.startUs >= range.endUs);
+      if (outside && n.result.status === 'pending') {
+        n.rangeSkipped = true;
+        n.result.status = 'skipped';
+      } else if (!outside && n.rangeSkipped) {
+        n.rangeSkipped = false;
+        n.result.status =
+          n.startUs + this.project.rules.hitWindowsUs.good < this.cursorUs ? 'skipped' : 'pending';
+      }
+    }
   }
   private event(
     kind: NoteEvent['kind'],

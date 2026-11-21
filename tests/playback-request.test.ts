@@ -18,13 +18,15 @@ function setup() {
   return { editor, ready, start };
 }
 describe('asynchronous sound preparation belongs to the latest play request', () => {
-  it.each(['pause', 'seek'] as const)(
+  it.each(['pause', 'seek', 'rate', 'loop'] as const)(
     'does not start old playback after %s during preparation',
     async (action) => {
       const { editor, ready, start } = setup();
       const pending = editor.togglePlay();
       if (action === 'pause') editor.pause();
-      else editor.seek(250000);
+      else if (action === 'seek') editor.seek(250000);
+      else if (action === 'rate') editor.setRate(0.5);
+      else editor.setLoop(null);
       ready();
       await pending;
       expect(start).not.toHaveBeenCalled();

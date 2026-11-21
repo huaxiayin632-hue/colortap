@@ -114,8 +114,12 @@ export class SoundPlanner {
     this.ticks.clear();
     this.floor = timeUs - (includeAt ? 1 : 0);
   }
-  pause(timeUs: number): void {
-    this.floor = Math.max(this.floor, timeUs);
+  pause(timeUs: number, includeAt = false): void {
+    const cutoff = timeUs - (includeAt ? 1 : 0);
+    this.floor = Math.max(this.floor, cutoff);
+    this.cancelAfter(cutoff);
+  }
+  cancelAfter(timeUs: number): void {
     this.ticks.clear();
     for (const [key, at] of this.seen) if (at > timeUs) this.seen.delete(key);
   }
@@ -150,7 +154,8 @@ export class SoundPlanner {
         const note = this.project.notes[trigger.noteId],
           start = this.tempo.resolve(note.at),
           end = endUs(note, this.tempo);
-        if (end + cue.delayUs <= this.floor || start > timeUs) continue;
+        if (end + cue.delayUs <= this.floor || start > (mode === 'playtest' ? timeUs : horizonUs))
+          continue;
         const tick = this.tempo.timeToTick(start);
         const first = Math.max(
           1,

@@ -1,3 +1,4 @@
+import { minimumLoopUs, type LoopRange } from '../../core/timing';
 import { computed, ref, shallowRef } from 'vue';
 import {
   EditHistory,
@@ -60,6 +61,27 @@ export function createEditor() {
   const transport = new AudioTransport(resources);
   const buffer = shallowRef<AudioBuffer | null>(null);
   const playback = ref(transport.snapshot());
+  const loopRange = shallowRef<LoopRange | null>(null),
+    loopEnabled = ref(false),
+    loopSuspended = ref(false);
+  let observedCycle = 0;
+  function syncRound() {
+    const next = transport.snapshot();
+    if (next.cycle !== observedCycle) {
+      observedCycle = next.cycle;
+      if (transport.loop) {
+        chart.update(transport.loop.endUs);
+        chart.reset(transport.loop.startUs, 'loop');
+      }
+    }
+    return next;
+  }
+  function resetPractice() {
+    loopRange.value = null;
+    loopEnabled.value = false;
+    loopSuspended.value = false;
+    observedCycle = 0;
+  }
   const frameRecorder = new FrameRecorder();
   const performanceSample = shallowRef<ProcessSample | null>(null);
   const performanceHistory: ProcessSample[] = [];
@@ -99,7 +121,8 @@ export function createEditor() {
         ? { clipId: reveals.selectedId.value, progress: reveals.override.value }
         : null,
     project: () => history.current,
-    time: () => transport.snapshot().timeUs,
+    time: () => syncRound().timeUs,
+    loop: () => transport.loop,
     playing: () => transport.snapshot().playing,
     commit: edit,
     pause,
@@ -118,6 +141,9 @@ export function createEditor() {
     onSelect: (id) => claimTarget({ kind: 'reveal', ids: [id] }),
   });
   const sounds = new SoundEngine(transport, take, (message) => notify(message, 'warning'));
+  sounds.beforeSchedule = () => {
+    syncRound();
+  };
   const selectedSoundId = ref<string | null>(null),
     selectedSoundAssetId = ref<string | null>(null);
   const soundAssets = computed(() => {
@@ -129,7 +155,7 @@ export function createEditor() {
   const soundStats = shallowRef(sounds.metrics());
   let soundVersion = -1;
   const unsubscribeSounds = chart.subscribe((e) => {
-    if (e.kind === 'session-reset') sounds.reset(e.timeUs);
+    if (e.kind === 'session-reset' && e.reason !== 'loop') sounds.reset(e.timeUs);
   });
   const camera = createCamera({
     onSelect: (kind, id) => claimTarget({ kind, ids: [id] }),
@@ -151,7 +177,7 @@ export function createEditor() {
     transport.setGain(mix.music.muted ? 0 : (project.value.music?.gain ?? 0.8) * mix.music.gain);
   }
   function refresh(): void {
-    const next = transport.snapshot();
+    const next = syncRound();
     chart.update(next.timeUs);
     reveals.update(next.timeUs);
     camera.update(next.timeUs);
@@ -258,6 +284,7 @@ export function createEditor() {
     const asset = music.value;
     if (!asset) {
       transport.unload();
+      resetPractice();
       buffer.value = null;
       refresh();
       return;
@@ -271,6 +298,7 @@ export function createEditor() {
     );
     const prepared = await transport.prepare(asset, bytes);
     transport.adopt(prepared);
+    resetPractice();
     syncMusicGain();
     buffer.value = transport.buffer;
     refresh();
@@ -287,6 +315,7 @@ export function createEditor() {
     chart.setMode('edit');
     const previous = session.value;
     transport.unload();
+    resetPractice();
     buffer.value = null;
     history = new EditHistory(next.project, Boolean(next.recovery));
     committed = history.committed;
@@ -484,6 +513,7 @@ export function createEditor() {
           throw error;
         }
         transport.adopt(prepared);
+        resetPractice();
         buffer.value = transport.buffer;
         publish();
         notify(`已导入 ${asset.originalName}`, 'success');
@@ -625,6 +655,7 @@ export function createEditor() {
       publish();
       if (oldAssetId !== (project.value.music?.assetId ?? null)) {
         transport.unload();
+        resetPractice();
         buffer.value = null;
       }
       await syncMusic();
@@ -662,8 +693,65 @@ export function createEditor() {
       notify(error instanceof Error ? error.message : '无法播放音乐', 'error');
     }
   }
+  function setRate(rate: number) {
+    playbackRequest++;
+    const at = syncRound().timeUs;
+    sounds.retime(at);
+    transport.setRate(rate);
+    refresh();
+  }
+  function setLoop(range: LoopRange | null) {
+    playbackRequest++;
+    const duration = transport.snapshot().durationUs;
+    const valid = range
+      ? {
+          startUs: Math.round(
+            Math.max(0, Math.min(duration, Math.min(range.startUs, range.endUs))),
+          ),
+          endUs: Math.round(Math.max(0, Math.min(duration, Math.max(range.startUs, range.endUs)))),
+        }
+      : null;
+    if (valid && valid.endUs - valid.startUs < minimumLoopUs) {
+      notify('循环区间至少需要 0.1 秒', 'warning');
+      return;
+    }
+    loopRange.value = valid;
+    if (loopEnabled.value || !valid) enableLoop(valid ? loopEnabled.value : false);
+  }
+  function enableLoop(enabled: boolean) {
+    playbackRequest++;
+    const state = syncRound(),
+      range = loopRange.value;
+    loopEnabled.value = enabled && Boolean(range);
+    loopSuspended.value = false;
+    const active = loopEnabled.value ? range : null;
+    if (!active && !transport.loop) {
+      chart.updateLoop();
+      refresh();
+      return;
+    }
+    const outside = active && (state.timeUs < active.startUs || state.timeUs >= active.endUs);
+    transport.setLoop(active, outside ? active!.startUs : undefined);
+    observedCycle = transport.snapshot().cycle;
+    if (outside) chart.reset(active!.startUs, 'loop');
+    else chart.updateLoop();
+    sounds.reset(
+      outside ? active!.startUs : state.timeUs,
+      Boolean(outside || (!state.playing && state.timeUs === (active?.startUs ?? 0))),
+    );
+    refresh();
+  }
   function seek(timeUs: number): void {
     playbackRequest++;
+    syncRound();
+    if (
+      loopEnabled.value &&
+      loopRange.value &&
+      (timeUs < loopRange.value.startUs || timeUs >= loopRange.value.endUs)
+    ) {
+      loopSuspended.value = true;
+      transport.setLoop(null);
+    }
     chart.release();
     transport.seek(timeUs);
     chart.reset(transport.snapshot().timeUs, 'seek');
@@ -672,6 +760,7 @@ export function createEditor() {
   function pause(): void {
     playbackRequest++;
     chart.release();
+    syncRound();
     transport.pause();
     sounds.pause(transport.snapshot().timeUs);
     refresh();
@@ -803,6 +892,12 @@ export function createEditor() {
     resources.dispose();
   }
   return {
+    loopRange,
+    loopEnabled,
+    loopSuspended,
+    setRate,
+    setLoop,
+    enableLoop,
     commandTarget,
     claimTarget,
     selectSound,
