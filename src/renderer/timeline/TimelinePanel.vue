@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useCommands } from '../commands/registry';
 import type { Editor } from '../state/editor';
-import { formatTime } from '../../core/timing';
+import { formatTime, minimumLoopUs, type LoopRange } from '../../core/timing';
 import { onsetIndex, type SnapMode } from '../../core/note-alignment';
 import Waveform from './Waveform.vue';
 import NoteTrack from './NoteTrack.vue';
@@ -11,6 +11,7 @@ import SoundTrack from './SoundTrack.vue';
 import CameraTrack from './CameraTrack.vue';
 import { defaultTracks, type TrackId, type TrackLayout } from '../../shared/models';
 
+const loopDraft = ref<LoopRange | null>(null);
 const emit = defineEmits<{ collapse: [] }>();
 const props = defineProps<{ editor: Editor }>();
 const scroller = ref<HTMLDivElement>();
@@ -159,6 +160,55 @@ const onsetMarks = computed(() => {
   }
   return result;
 });
+const shownLoop = computed(() => loopDraft.value ?? props.editor.loopRange.value);
+let loopDrag: { pointerId: number; fixed: number; offsetX: number } | null = null;
+function timeAtX(event: MouseEvent, offsetX = 0) {
+  const el = scroller.value!;
+  const raw =
+    ((event.clientX - offsetX - el.getBoundingClientRect().left + el.scrollLeft) /
+      pixelsPerSecond.value) *
+    1e6;
+  const time = props.editor.tempo.value.resolve(
+    props.editor.chart.resolveMoment(raw, event.altKey),
+  );
+  return Math.round(Math.max(0, Math.min(props.editor.playback.value.durationUs, time)));
+}
+function loopDown(event: PointerEvent, endpoint?: 'startUs' | 'endUs') {
+  if (event.button !== 0 || !props.editor.playback.value.ready || props.editor.busy.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const original = props.editor.loopRange.value,
+    at = timeAtX(event);
+  loopDrag = {
+    pointerId: event.pointerId,
+    fixed: endpoint && original ? original[endpoint === 'startUs' ? 'endUs' : 'startUs'] : at,
+    offsetX:
+      endpoint && original
+        ? event.clientX -
+          scroller.value!.getBoundingClientRect().left +
+          scroller.value!.scrollLeft -
+          (original[endpoint] / 1e6) * pixelsPerSecond.value
+        : 0,
+  };
+  loopDraft.value = endpoint && original ? { ...original } : { startUs: at, endUs: at };
+  scroller.value!.setPointerCapture(event.pointerId);
+}
+function loopMove(event: PointerEvent) {
+  if (loopDrag?.pointerId !== event.pointerId) return;
+  const at = timeAtX(event, loopDrag.offsetX),
+    fixed = loopDrag.fixed;
+  loopDraft.value = { startUs: Math.min(at, fixed), endUs: Math.max(at, fixed) };
+}
+function loopUp(event: PointerEvent, cancel = false) {
+  if (loopDrag?.pointerId !== event.pointerId) return;
+  const next = loopDraft.value;
+  loopDrag = null;
+  loopDraft.value = null;
+  if (scroller.value?.hasPointerCapture(event.pointerId))
+    scroller.value.releasePointerCapture(event.pointerId);
+  if (!cancel && next && next.endUs - next.startUs >= minimumLoopUs) props.editor.setLoop(next);
+  else if (!cancel) props.editor.notify('循环区间至少需要 0.1 秒', 'warning');
+}
 let scrubbing: { pointerId: number; resume: boolean } | null = null;
 function seekAt(event: PointerEvent): void {
   if (!scroller.value || !props.editor.playback.value.ready) return;
@@ -177,9 +227,14 @@ function down(event: PointerEvent): void {
   seekAt(event);
 }
 function move(event: PointerEvent): void {
-  if (scrubbing?.pointerId === event.pointerId) seekAt(event);
+  if (loopDrag) loopMove(event);
+  else if (scrubbing?.pointerId === event.pointerId) seekAt(event);
 }
 function up(event: PointerEvent, cancelled = false): void {
+  if (loopDrag) {
+    loopUp(event, cancelled);
+    return;
+  }
   if (scrubbing?.pointerId !== event.pointerId) return;
   const resume = scrubbing.resume;
   scrubbing = null;
@@ -266,10 +321,16 @@ function endPan(event?: PointerEvent) {
 }
 function lostCapture(event: PointerEvent) {
   endPan(event);
+  if (loopDrag?.pointerId === event.pointerId) loopUp(event, true);
   if (scrubbing?.pointerId === event.pointerId) up(event, true);
 }
 function blur() {
   endPan();
+  const loopId = loopDrag?.pointerId;
+  loopDrag = null;
+  loopDraft.value = null;
+  if (loopId !== undefined && scroller.value?.hasPointerCapture(loopId))
+    scroller.value.releasePointerCapture(loopId);
   if (scrubbing) {
     const id = scrubbing.pointerId;
     scrubbing = null;
@@ -321,7 +382,7 @@ let observer: ResizeObserver | null = null;
 onMounted(() => {
   commands.timeline.value = {
     canNavigate: () =>
-      !interacting.value && !scrubbing && !pan && Boolean(scroller.value?.clientWidth),
+      !interacting.value && !scrubbing && !pan && !loopDrag && Boolean(scroller.value?.clientWidth),
     reveal,
     locate: jumpToHead,
   };
@@ -411,9 +472,47 @@ onBeforeUnmount(() => {
           @input="zoomAt(Number(($event.target as HTMLInputElement).value))"
       /></label>
     </header>
+    <div class="loop-toolbar">
+      <button
+        aria-label="循环播放"
+        :aria-pressed="editor.loopEnabled.value && !editor.loopSuspended.value"
+        :disabled="!commands.enabled('play.loop')"
+        @click="commands.run('play.loop')"
+      >
+        {{
+          editor.loopSuspended.value
+            ? '循环已暂停 · 重新启用'
+            : editor.loopEnabled.value
+              ? '循环开启'
+              : '循环关闭'
+        }}
+      </button>
+      <button :disabled="!editor.loopRange.value" @click="commands.run('play.loopClear')">
+        清除循环
+      </button>
+      <span v-if="editor.loopRange.value"
+        >A {{ formatTime(editor.loopRange.value.startUs) }} — B
+        {{ formatTime(editor.loopRange.value.endUs) }}</span
+      >
+      <span v-else>在标尺下拖选区间 · 至少 0.1 秒</span>
+      <span v-if="editor.loopSuspended.value">已定位到区间外</span>
+      <output
+        data-testid="practice-state"
+        :data-cycle="editor.playback.value.cycle"
+        :data-rate="editor.playback.value.rate"
+        :data-loop="editor.loopEnabled.value && !editor.loopSuspended.value"
+        >{{
+          editor.loopEnabled.value && !editor.loopSuspended.value
+            ? '第 ' + (editor.playback.value.cycle + 1) + ' 轮'
+            : ''
+        }}</output
+      >
+    </div>
     <div class="timeline-tracks production-tracks" @wheel.capture="wheel">
       <div class="track-labels">
-        <div class="ruler-label">{{ preferences.ruler === 'time' ? '分 : 秒' : '小节 : 拍' }}</div>
+        <div class="ruler-label practice-ruler-label">
+          {{ preferences.ruler === 'time' ? '分 : 秒' : '小节 : 拍' }}
+        </div>
         <section
           ref="labelScroller"
           class="track-labels-viewport"
@@ -487,13 +586,48 @@ onBeforeUnmount(() => {
           class="timeline-content"
           :style="{
             width: contentWidth + 'px',
-            height: 28 + layout.order.reduce((sum, id) => sum + rowHeight(id), 0) + 'px',
+            height: 54 + layout.order.reduce((sum, id) => sum + rowHeight(id), 0) + 'px',
           }"
         >
           <div class="ruler" data-testid="timeline-ruler">
             <span v-for="mark in marks" :key="mark.x" :style="{ left: mark.x + 'px' }">{{
               mark.label
             }}</span>
+          </div>
+          <div
+            class="loop-lane"
+            data-testid="loop-lane"
+            @pointerdown.stop="loopDown($event)"
+            @contextmenu.prevent.stop
+          >
+            <span class="loop-hint">拖选循环 A–B · Alt 暂时不吸附</span>
+            <div
+              v-if="shownLoop"
+              class="loop-range"
+              :class="{ enabled: editor.loopEnabled.value && !editor.loopSuspended.value }"
+              :style="{
+                left: (shownLoop.startUs / 1e6) * pixelsPerSecond + 'px',
+                width: ((shownLoop.endUs - shownLoop.startUs) / 1e6) * pixelsPerSecond + 'px',
+              }"
+              :data-start-us="shownLoop.startUs"
+              :data-end-us="shownLoop.endUs"
+            >
+              <button
+                aria-label="调整循环起点"
+                class="loop-end start"
+                @pointerdown.stop="loopDown($event, 'startUs')"
+              >
+                A
+              </button>
+              <span>{{ ((shownLoop.endUs - shownLoop.startUs) / 1e6).toFixed(2) }} 秒</span>
+              <button
+                aria-label="调整循环终点"
+                class="loop-end end"
+                @pointerdown.stop="loopDown($event, 'endUs')"
+              >
+                B
+              </button>
+            </div>
           </div>
           <div class="beat-grid">
             <i
@@ -588,6 +722,91 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
+.loop-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  flex-shrink: 0;
+  padding: 2px 10px;
+  font-size: 11px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.loop-toolbar button {
+  font-size: 11px;
+}
+.loop-toolbar button[aria-pressed='true'] {
+  background: #3b5a64;
+}
+.loop-toolbar output {
+  margin-left: auto;
+  color: var(--muted);
+}
+.track-labels .practice-ruler-label {
+  height: 54px;
+  min-height: 54px;
+}
+.loop-lane {
+  position: sticky;
+  top: 28px;
+  height: 26px;
+  background: #252c33;
+  border-bottom: 1px solid #586470;
+  z-index: 3;
+  cursor: crosshair;
+}
+.loop-hint {
+  font-size: 10px;
+  color: #82909b;
+  margin-left: 10px;
+}
+.loop-range {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  min-width: 2px;
+  background: #5e707a;
+  border: 1px solid #8faab7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.loop-range.enabled {
+  background: #3c6b70;
+  border-color: #91d7db;
+}
+.loop-end {
+  position: absolute;
+  top: -1px;
+  height: 22px;
+  width: 14px;
+  padding: 0;
+  font-size: 10px;
+  background: #698d94;
+  cursor: ew-resize;
+}
+.loop-end.start {
+  left: -1px;
+}
+.loop-end.end {
+  right: -1px;
+}
+.production-tracks .beat-grid {
+  top: 54px;
+}
+.playback-rate {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.playback-rate select {
+  width: 66px;
+}
+
 .timeline-toolbar {
   height: auto;
   min-height: 39px;

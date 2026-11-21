@@ -360,7 +360,16 @@ try {
   });
   await check('路径节点右键及 Delete 仅删除节点，最少两个节点时不能删整条 Slider', async () => {
     await note(slider.id).click();
+    const beforeRender = Number(
+      await page.getByTestId('canvas-host').getAttribute('data-render-count'),
+    );
     await button('路径 工具').click();
+    // Path handle hit regions are published by the next demand-rendered canvas frame.
+    await page.waitForFunction(
+      (before) =>
+        Number(document.querySelector('[data-testid=canvas-host]').dataset.renderCount) > before,
+      beforeRender,
+    );
     const p = baseline.paths[slider.path.pathId],
       node = p.nodes[1];
     // Newly drawn path uses the identity path transform.

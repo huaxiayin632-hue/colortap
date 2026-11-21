@@ -188,6 +188,15 @@ describe('sound scheduling on the unified music timeline', () => {
     const plan = new SoundPlanner(p);
     expect(plan.collect(4e6, 'playtest', take).map((x) => x.timeUs)).toEqual([2500000]);
   });
+  it('previews the first Slider ticks in lookahead before the audible head, but never predicts playtest tracking', () => {
+    const { p, assetId, slider } = fixture();
+    cue(p, assetId, { kind: 'slider-tick', noteId: slider.id, intervalTicks: 60 });
+    const take = new RevealTake();
+    expect(
+      new SoundPlanner(p).collect(1990000, 'preview', take, 2070000).map((e) => e.timeUs),
+    ).toEqual([2031250, 2062500]);
+    expect(new SoundPlanner(p).collect(1990000, 'playtest', take, 2070000)).toEqual([]);
+  });
   it('advances Slider tick scheduling without losing delayed cues, and re-arms after pause/seek', () => {
     const { p, assetId, slider } = fixture();
     cue(p, assetId, { kind: 'slider-tick', noteId: slider.id, intervalTicks: 960 }, 400000);

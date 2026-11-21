@@ -53,12 +53,18 @@ export function useWorkspace() {
     clearTimeout(timer);
     persist();
   }
+  // Electron page zoom can change CSS viewport dimensions without a window resize event.
+  let viewportObserver: ResizeObserver | undefined;
   onMounted(() => {
+    resize();
+    viewportObserver = new ResizeObserver(resize);
+    viewportObserver.observe(document.documentElement);
     window.addEventListener('resize', resize);
     window.addEventListener('pagehide', flush);
   });
   onBeforeUnmount(() => {
     flush();
+    viewportObserver?.disconnect();
     window.removeEventListener('resize', resize);
     window.removeEventListener('pagehide', flush);
   });

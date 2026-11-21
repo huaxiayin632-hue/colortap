@@ -283,6 +283,20 @@ onBeforeUnmount(() => {
             {{ editor.playback.value.playing ? 'Ⅱ' : '▶' }}
           </button>
         </div>
+        <label class="playback-rate"
+          >速度
+          <select
+            aria-label="播放倍率"
+            :value="editor.playback.value.rate"
+            :disabled="editor.busy.value"
+            title="直接变速；降速会降低音乐和随谱音效的音高"
+            @change="commands.run('play.rate.' + ($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="rate in [0.25, 0.5, 0.75, 1]" :key="rate" :value="rate">
+              {{ rate }}×
+            </option>
+          </select>
+        </label>
         <output class="time-display" data-testid="current-time">{{
           formatTime(editor.playback.value.timeUs)
         }}</output

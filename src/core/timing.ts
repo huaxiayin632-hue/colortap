@@ -242,39 +242,115 @@ export class TempoMap {
   }
 }
 
-// Projection of one audio clock. No animation-frame deltas or wall clock accumulation.
+export const playbackRates = [0.25, 0.5, 0.75, 1] as const;
+export const minimumLoopUs = 100000;
+export interface LoopRange {
+  startUs: number;
+  endUs: number;
+}
+interface ClockAnchor {
+  seconds: number;
+  timeUs: number;
+  cycle: number;
+  rate: number;
+  running: boolean;
+  loop: LoopRange | null;
+}
+/** Piecewise projection of the audio clock, including the short output-device delay. */
 export class AnchoredClock {
-  private anchorSeconds = 0;
-  private anchorUs = 0;
-  private running = false;
+  private anchors: ClockAnchor[] = [
+    { seconds: 0, timeUs: 0, cycle: 0, rate: 1, running: false, loop: null },
+  ];
   durationUs = 0;
-  get playing(): boolean {
-    return this.running;
+  private get latest() {
+    return this.anchors.at(-1)!;
   }
-  positionAt(contextSeconds: number): Us {
-    const time =
-      this.anchorUs +
-      (this.running ? Math.max(0, contextSeconds - this.anchorSeconds) * 1_000_000 : 0);
-    return Math.round(Math.max(0, Math.min(this.durationUs, time)));
+  get playing() {
+    return this.latest.running;
   }
-  start(contextSeconds: number): void {
-    this.anchorSeconds = contextSeconds;
-    this.running = true;
+  get rate() {
+    return this.latest.rate;
   }
-  pause(contextSeconds: number): void {
-    this.anchorUs = this.positionAt(contextSeconds);
-    this.running = false;
+  get loop() {
+    return this.latest.loop;
   }
-  seek(timeUs: Us, contextSeconds: number): void {
+  projection(contextSeconds: number) {
+    const a =
+      [...this.anchors].reverse().find((a) => a.seconds <= contextSeconds) ?? this.anchors[0];
+    let timeUs =
+      a.timeUs + (a.running ? Math.max(0, contextSeconds - a.seconds) * 1e6 * a.rate : 0);
+    let cycle = a.cycle;
+    if (a.loop && timeUs >= a.loop.endUs) {
+      const span = a.loop.endUs - a.loop.startUs;
+      const count = Math.floor((timeUs - a.loop.startUs) / span);
+      cycle += count;
+      timeUs = a.loop.startUs + (timeUs - a.loop.startUs - count * span);
+    }
+    return { timeUs: Math.round(Math.max(0, Math.min(this.durationUs, timeUs))), cycle };
+  }
+  positionAt(contextSeconds: number) {
+    return this.projection(contextSeconds).timeUs;
+  }
+  private change(seconds: number, patch: Partial<ClockAnchor>) {
+    const previous = this.latest,
+      position = this.projection(seconds);
+    this.anchors = this.anchors.filter((a) => a.seconds < seconds).slice(-63);
+    this.anchors.push({ ...previous, ...position, seconds, ...patch });
+  }
+  start(contextSeconds: number) {
+    this.change(contextSeconds, { running: true });
+  }
+  pause(contextSeconds: number) {
+    this.change(contextSeconds, { running: false });
+  }
+  seek(timeUs: number, contextSeconds: number) {
     if (!Number.isFinite(timeUs)) throw new Error('无效播放位置');
-    this.anchorUs = Math.round(Math.max(0, Math.min(this.durationUs, timeUs)));
-    this.anchorSeconds = contextSeconds;
+    // A discontinuity takes effect immediately, including while device output lags behind.
+    this.anchors = [
+      {
+        ...this.latest,
+        seconds: contextSeconds,
+        timeUs: Math.round(Math.max(0, Math.min(this.durationUs, timeUs))),
+      },
+    ];
   }
-  reset(durationUs = 0): void {
-    this.running = false;
-    this.anchorUs = 0;
-    this.anchorSeconds = 0;
+  setRate(rate: number, seconds: number) {
+    if (!(playbackRates as readonly number[]).includes(rate)) throw new Error('无效播放倍率');
+    const scheduled = this.anchors.filter((a) => a.seconds > seconds);
+    const current =
+      [...this.anchors].reverse().find((a) => a.seconds <= seconds) ?? this.anchors[0];
+    this.change(seconds, { rate, running: current.running });
+    // Changing speed in the 20 ms pre-roll must preserve the scheduled source start.
+    this.anchors.push(...scheduled.map((a) => ({ ...a, rate })));
+  }
+  setLoop(loop: LoopRange | null, seconds: number) {
+    if (
+      loop &&
+      (!Number.isSafeInteger(loop.startUs) ||
+        !Number.isSafeInteger(loop.endUs) ||
+        loop.startUs < 0 ||
+        loop.endUs > this.durationUs ||
+        loop.endUs - loop.startUs < minimumLoopUs)
+    )
+      throw new Error('循环区间至少 0.1 秒且须在音乐范围内');
+    this.change(seconds, { loop: loop ? { ...loop } : null });
+  }
+  contextTimeAt(timeUs: number, cycle = this.latest.cycle) {
+    const inverse = (a: ClockAnchor) => {
+      const extra = a.loop ? (cycle - a.cycle) * (a.loop.endUs - a.loop.startUs) : 0;
+      return a.seconds + (timeUs + extra - a.timeUs) / 1e6 / a.rate;
+    };
+    for (let i = this.anchors.length - 1; i >= 0; i--) {
+      const a = this.anchors[i],
+        at = inverse(a);
+      if (a.running && at >= a.seconds && at < (this.anchors[i + 1]?.seconds ?? Infinity))
+        return at;
+    }
+    return inverse(this.latest);
+  }
+  reset(durationUs = 0) {
     this.durationUs = durationUs;
+    this.anchors = [{ seconds: 0, timeUs: 0, cycle: 0, rate: 1, running: false, loop: null }];
   }
 }
 
