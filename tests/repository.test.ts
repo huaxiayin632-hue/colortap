@@ -128,6 +128,42 @@ describe('real project filesystem operations', () => {
     project.assets[asset.id].relativePath = 'assets/audio/not-authorized.wav';
     await expect(repository.save(session.handle, project, file)).rejects.toThrow(/授权/);
   });
+  it.each(['in-place', 'replace', 'delete'])(
+    'invalidates a warm digest on external %s, even with restored mtime',
+    async (mode) => {
+      const { project, session, asset, bytes } = await withMusic();
+      const file = path.join(root, 'cached', 'project.rcproj');
+      await repository.save(session.handle, project, file);
+      await repository.save(session.handle, project, file);
+      const target = resolveWithin(path.dirname(file), asset.relativePath);
+      const stat = await fs.stat(target);
+      const bad = Buffer.alloc(bytes.length, 42);
+      if (mode === 'in-place') await fs.writeFile(target, bad);
+      if (mode === 'replace') {
+        await fs.writeFile(target + '.replacement', bad);
+        await fs.rename(target + '.replacement', target);
+      }
+      if (mode === 'delete') await fs.unlink(target);
+      else await fs.utimes(target, stat.atime, stat.mtime);
+      await expect(repository.save(session.handle, project, file)).rejects.toThrow();
+      await expect(repository.readAsset(session.handle, asset.id)).rejects.toThrow();
+      expect((await repository.open(file)).project).toEqual(project);
+    },
+  );
+  it('checks an already verified save-as target again after outside changes', async () => {
+    const { project, session, asset, bytes } = await withMusic();
+    const first = path.join(root, 'first', 'project.rcproj');
+    const second = path.join(root, 'second', 'project.rcproj');
+    await repository.save(session.handle, project, first);
+    await repository.save(session.handle, project, second);
+    await repository.save(session.handle, project, first);
+    await fs.writeFile(
+      resolveWithin(path.dirname(second), asset.relativePath),
+      Buffer.alloc(bytes.length),
+    );
+    await expect(repository.save(session.handle, project, second)).rejects.toThrow(/同名/);
+    expect(repository.filePath(session.handle)).toBe(first);
+  });
   it.each([
     '../outside.wav',
     'assets/../outside.wav',

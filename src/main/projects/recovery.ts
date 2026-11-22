@@ -14,10 +14,11 @@ const entrySchema = z
     filePath: z.string().nullable(),
     savedAt: z.iso.datetime(),
     version: z.number().int().nonnegative(),
+    sharedAssets: z.literal(true).optional(),
   })
   .strict();
 
-/** Immutable generations: only the small pointer is replaced after all assets are durable. */
+/** Immutable manifests share independent, verified recovery assets. The pointer commits last. */
 export class RecoveryStore {
   constructor(private readonly root: string) {}
 
@@ -42,7 +43,9 @@ export class RecoveryStore {
   async load(id: string, token: string) {
     const entry = await this.current(id);
     if (!entry || entry.token !== token) throw Error('恢复快照已更新，请重新查看恢复列表');
-    const file = path.join(this.folder(id), entry.token, 'project.rcproj');
+    const file = entry.sharedAssets
+      ? path.join(this.folder(id), entry.token + '.rcproj')
+      : path.join(this.folder(id), entry.token, 'project.rcproj');
     await checkRealPath(this.root, file);
     const project = validateProject(JSON.parse(await fs.readFile(file, 'utf8')));
     await eachAsset(Object.values(project.assets), async (asset) => {
@@ -84,17 +87,22 @@ export class RecoveryStore {
   ): Promise<RecoveryEntry> {
     const folder = this.folder(info.id),
       token = randomUUID();
-    const pending = path.join(folder, `.pending-${token}`),
-      complete = path.join(folder, token);
-    const entry = entrySchema.parse({ ...info, token, savedAt: new Date().toISOString() });
-    await fs.mkdir(pending, { recursive: true });
-    await checkRealPath(this.root, pending);
+    const pending = path.join(folder, `.pending-${token}.rcproj`),
+      complete = path.join(folder, token + '.rcproj');
+    const entry = entrySchema.parse({
+      ...info,
+      token,
+      savedAt: new Date().toISOString(),
+      sharedAssets: true,
+    });
+    await fs.mkdir(folder, { recursive: true });
+    await checkRealPath(this.root, folder);
     try {
-      await writeProject(path.join(pending, 'project.rcproj'));
+      await writeProject(pending);
       await fs.rename(pending, complete);
       await atomicWrite(path.join(folder, 'current.json'), JSON.stringify(entry), false);
     } finally {
-      await fs.rm(pending, { recursive: true, force: true }).catch(() => undefined);
+      await fs.unlink(pending).catch(() => undefined);
     }
     // Old generations are unreferenced now. A cleanup failure must not hide a valid snapshot.
     await this.prune(info.id, token).catch(() => undefined);
@@ -118,9 +126,51 @@ export class RecoveryStore {
   private async prune(id: string, keep: string | null): Promise<void> {
     const folder = this.folder(id);
     await checkRealPath(this.root, folder);
+    const current = keep ? await this.current(id) : null;
+    let referenced = new Set<string>();
+    if (current?.sharedAssets) {
+      const file = path.join(folder, current.token + '.rcproj');
+      await checkRealPath(folder, file);
+      const project = validateProject(JSON.parse(await fs.readFile(file, 'utf8')));
+      referenced = new Set(
+        Object.values(project.assets).map((asset) => resolveWithin(folder, asset.relativePath)),
+      );
+    }
     for (const item of await fs.readdir(folder, { withFileTypes: true })) {
+      const manifest = /^(?:\.pending-)?([\da-f-]+)\.rcproj$/.exec(item.name);
+      if (item.isFile() && manifest && z.uuid().safeParse(manifest[1]).success) {
+        if (item.name !== keep + '.rcproj') {
+          const target = path.join(folder, item.name);
+          await checkRealPath(folder, target);
+          await fs.unlink(target);
+        }
+        continue;
+      }
+      if (item.name === 'assets' && item.isDirectory()) {
+        const clean = async (directory: string): Promise<void> => {
+          await checkRealPath(folder, directory);
+          for (const child of await fs.readdir(directory, { withFileTypes: true })) {
+            const target = path.join(directory, child.name);
+            if (referenced.has(target) && child.isFile()) continue;
+            await checkRealPath(folder, target);
+            if (child.isDirectory()) await clean(target);
+            else if (!referenced.has(target)) await fs.unlink(target);
+          }
+          await fs.rmdir(directory).catch(() => undefined);
+        };
+        await clean(path.join(folder, item.name));
+        continue;
+      }
       const temporaryPointer = /^\.current\.json\.(.+)\.tmp$/.exec(item.name);
-      if (item.isFile() && temporaryPointer && z.uuid().safeParse(temporaryPointer[1]).success) {
+      const temporaryManifest = /^\.(?:\.pending-)?([\da-f-]+)\.rcproj\.([\da-f-]+)\.tmp$/.exec(
+        item.name,
+      );
+      if (
+        item.isFile() &&
+        ((temporaryPointer && z.uuid().safeParse(temporaryPointer[1]).success) ||
+          (temporaryManifest &&
+            temporaryManifest.slice(1).every((part) => z.uuid().safeParse(part).success)))
+      ) {
         const target = path.join(folder, item.name);
         await checkRealPath(folder, target);
         await fs.unlink(target);

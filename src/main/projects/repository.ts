@@ -8,7 +8,8 @@ import type { Asset, Project } from '../../shared/models';
 import type { ProjectSession, RecoveryEntry, SaveResult } from '../../shared/ipc';
 import { RecoveryStore } from './recovery';
 import { z } from 'zod';
-import { atomicWrite, checkRealPath, eachAsset, hashFile, resolveWithin } from './file-io';
+import { atomicWrite, checkRealPath, eachAsset, resolveWithin } from './file-io';
+import { AssetVerifier } from './asset-verifier';
 export { atomicWrite, eachAsset, resolveWithin } from './file-io';
 import { serializeProject, validateProject } from '../../shared/schema';
 import type { ImageImport, ImageWorkerRequest } from '../../shared/images';
@@ -35,6 +36,7 @@ export class ProjectRepository {
   private resolvedSessionRoot: string | null = null;
   private pending: Promise<unknown> = Promise.resolve();
   private readonly recovery: RecoveryStore;
+  private readonly verifier = new AssetVerifier();
   constructor(
     private readonly sessionRoot: string,
     recoveryRoot = path.join(path.dirname(sessionRoot), 'recoveries'),
@@ -129,7 +131,7 @@ export class ProjectRepository {
           version,
         },
         async (file) => {
-          await this.writeProject(session, project, file);
+          await this.writeProject(session, project, file, false, true);
         },
       );
       session.snapshotVersion = version;
@@ -297,15 +299,14 @@ export class ProjectRepository {
     const source = this.get(handle).sources.get(assetId);
     if (!source) throw new Error('当前工程没有该素材');
     try {
-      await checkRealPath(source.root, source.file);
-      const bytes = await fs.readFile(source.file);
-      if (
-        bytes.byteLength !== source.asset.byteLength ||
-        createHash('sha256').update(bytes).digest('hex') !== source.asset.sha256
-      ) {
-        throw new Error('素材内容已改变，请重新导入');
-      }
-      return Uint8Array.from(bytes).buffer;
+      const bytes = (await this.verifier.check(source.root, source.file, source.asset, true))!;
+      // readFile normally owns its backing buffer; do not make an additional full copy.
+      return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+        ? (bytes.buffer as ArrayBuffer)
+        : (bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          ) as ArrayBuffer);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT')
         throw new Error(
@@ -389,7 +390,13 @@ export class ProjectRepository {
     }
     return { filePath: target, savedRevision: project.revision, warning };
   }
-  private async writeProject(session: Session, project: Project, target: string, backup = false) {
+  private async writeProject(
+    session: Session,
+    project: Project,
+    target: string,
+    backup = false,
+    repairRecovery = false,
+  ) {
     if (project.id !== session.projectId) throw new Error('工程会话与文档不匹配');
     const root = path.dirname(target);
     await fs.mkdir(root, { recursive: true });
@@ -404,13 +411,11 @@ export class ProjectRepository {
       ) {
         throw new Error(`素材未通过导入授权：${asset.originalName}`);
       }
-      await checkRealPath(source.root, source.file);
-      if ((await hashFile(source.file)) !== asset.sha256)
-        throw new Error(`素材内容已改变：${asset.originalName}`);
+      await this.verifier.check(source.root, source.file, asset);
       const destination = resolveWithin(root, asset.relativePath);
-      await fs.mkdir(path.dirname(destination), { recursive: true });
-      await checkRealPath(root, path.dirname(destination));
       if (path.resolve(source.file) !== destination) {
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await checkRealPath(root, path.dirname(destination));
         let exists = false;
         try {
           await fs.access(destination);
@@ -420,17 +425,26 @@ export class ProjectRepository {
         }
         if (exists) {
           await checkRealPath(root, destination);
-          if ((await hashFile(destination)) !== asset.sha256)
-            throw new Error(`目标文件夹中存在不同内容的同名素材：${asset.originalName}`);
-        } else {
+          try {
+            await this.verifier.check(root, destination, asset);
+          } catch (error) {
+            if (
+              !repairRecovery ||
+              !(error instanceof Error) ||
+              !error.message.startsWith('素材内容已改变')
+            )
+              throw new Error(
+                `目标文件夹中存在不同内容或无法访问的同名素材：${asset.originalName}`,
+              );
+            // An independent recovery copy can be repaired from the verified live source.
+            exists = false;
+          }
+        }
+        if (!exists) {
           const temp = destination + '.' + randomUUID() + '.tmp';
           try {
             await fs.copyFile(source.file, temp);
-            if (
-              (await fs.stat(temp)).size !== asset.byteLength ||
-              (await hashFile(temp)) !== asset.sha256
-            )
-              throw new Error(`素材复制校验失败：${asset.originalName}`);
+            await this.verifier.check(root, temp, asset);
             const copied = await fs.open(temp, 'r+');
             try {
               await copied.sync();
@@ -462,5 +476,6 @@ export class ProjectRepository {
     await checkRealPath(root, target);
     await fs.rm(target, { recursive: true, force: true });
     this.sessions.delete(handle);
+    this.verifier.clear();
   }
 }

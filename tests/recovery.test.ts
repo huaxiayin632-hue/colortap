@@ -44,14 +44,17 @@ describe('recovery storage and session ownership', () => {
     const temporary = `.current.json.${randomUUID()}.tmp`,
       generation = randomUUID();
     await fs.writeFile(path.join(folder, temporary), 'incomplete');
+    const partialManifest = `..pending-${randomUUID()}.rcproj.${randomUUID()}.tmp`;
+    await fs.writeFile(path.join(folder, partialManifest), 'incomplete');
     await fs.mkdir(path.join(folder, generation));
     await fs.writeFile(path.join(folder, 'keep.txt'), 'not owned');
     expect((await repository.listRecoveries()).entries).toEqual([entry]);
     const files = await fs.readdir(folder);
     expect(files).not.toContain(temporary);
+    expect(files).not.toContain(partialManifest);
     expect(files).not.toContain(generation);
     expect(files).toContain('keep.txt');
-    expect(files).toContain(entry.token);
+    expect(files).toContain(entry.token + '.rcproj');
   });
   it('restores unnamed projects and all audio from independent assets after session cleanup', async () => {
     const { project, session, original, music, sound, bytes } = await setup();
@@ -92,9 +95,13 @@ describe('recovery storage and session ownership', () => {
       const { project, session } = await setup();
       const first = (await repository.snapshot(session.handle, project, 1))!;
       project.name = '不会替换完整快照';
-      if (failure === 'asset-copy')
+      if (failure === 'asset-copy') {
+        const file = path.join(root, 'added.wav');
+        await fs.writeFile(file, 'new asset for the next generation');
+        const added = await repository.importAudio(session.handle, file);
+        project.assets[added.id] = added;
         vi.spyOn(fs, 'copyFile').mockRejectedValueOnce(Error('disk full'));
-      else {
+      } else {
         const rename = fs.rename.bind(fs);
         vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
           if (path.basename(String(to)) === 'current.json') throw Error('interrupted pointer');
@@ -123,15 +130,71 @@ describe('recovery storage and session ownership', () => {
     const { project, session, music } = await setup();
     const entry = (await repository.snapshot(session.handle, project, 1))!;
     await repository.close(session.handle);
-    await fs.writeFile(
-      path.join(root, 'recoveries', entry.id, entry.token, music.relativePath),
-      'broken',
-    );
+    await fs.writeFile(path.join(root, 'recoveries', entry.id, music.relativePath), 'broken');
     const list = await repository.listRecoveries();
     expect(list.entries).toEqual([]);
     expect(list.warnings).toHaveLength(1);
     await expect(repository.restoreRecovery(entry.id, entry.token)).rejects.toThrow(/损坏/);
     expect(await fs.stat(path.join(root, 'recoveries', entry.id, 'current.json'))).toBeTruthy();
+  });
+  it('reuses independent recovery assets and keeps them intact when source files change', async () => {
+    const { project, session, music, bytes } = await setup();
+    const formal = path.join(root, 'formal', 'project.rcproj');
+    await repository.save(session.handle, project, formal, 0);
+    const first = (await repository.snapshot(session.handle, project, 1))!;
+    const before = path.join(root, 'recoveries', first.id, music.relativePath);
+    const identity = await fs.stat(before, { bigint: true });
+    const copy = vi.spyOn(fs, 'copyFile');
+    const second = (await repository.snapshot(session.handle, project, 2))!;
+    expect(copy).not.toHaveBeenCalled();
+    const after = path.join(root, 'recoveries', second.id, music.relativePath);
+    expect((await fs.stat(after, { bigint: true })).ino).toBe(identity.ino);
+    expect(
+      (await fs.stat(path.join(path.dirname(formal), music.relativePath), { bigint: true })).ino,
+    ).not.toBe(identity.ino);
+    await fs.writeFile(
+      path.join(path.dirname(formal), music.relativePath),
+      Buffer.alloc(bytes.length),
+    );
+    await expect(repository.snapshot(session.handle, project, 3)).rejects.toThrow(/改变/);
+    expect(await fs.readFile(after)).toEqual(bytes);
+    expect((await repository.listRecoveries()).entries).toEqual([second]);
+  });
+  it('repairs corrupt independent recovery copies from the verified live source', async () => {
+    const { project, session, music, bytes } = await setup();
+    const first = (await repository.snapshot(session.handle, project, 1))!;
+    const file = path.join(root, 'recoveries', first.id, music.relativePath);
+    await fs.writeFile(file, Buffer.alloc(bytes.length));
+    const second = (await repository.snapshot(session.handle, project, 2))!;
+    expect(await fs.readFile(file)).toEqual(bytes);
+    expect((await repository.listRecoveries()).entries).toEqual([second]);
+  });
+  it('prunes only assets absent from the committed snapshot, keeping live undo sources', async () => {
+    const { project, session, sound, bytes } = await setup();
+    const first = (await repository.snapshot(session.handle, project, 1))!;
+    const file = path.join(root, 'recoveries', first.id, sound.relativePath);
+    delete project.assets[sound.id];
+    await repository.snapshot(session.handle, project, 2);
+    await expect(fs.stat(file)).rejects.toThrow();
+    expect(Buffer.from(await repository.readAsset(session.handle, sound.id))).toEqual(bytes);
+    project.assets[sound.id] = sound;
+    await repository.snapshot(session.handle, project, 3);
+    expect(await fs.readFile(file)).toEqual(bytes);
+  });
+  it('still restores an already completed generation from before shared recovery assets', async () => {
+    const { project, session } = await setup();
+    const entry = (await repository.snapshot(session.handle, project, 1))!;
+    const folder = path.join(root, 'recoveries', entry.id);
+    await fs.mkdir(path.join(folder, entry.token));
+    await fs.rename(path.join(folder, 'assets'), path.join(folder, entry.token, 'assets'));
+    await fs.rename(
+      path.join(folder, entry.token + '.rcproj'),
+      path.join(folder, entry.token, 'project.rcproj'),
+    );
+    delete entry.sharedAssets;
+    await fs.writeFile(path.join(folder, 'current.json'), JSON.stringify(entry));
+    await repository.close(session.handle);
+    expect((await repository.restoreRecovery(entry.id, entry.token)).project).toEqual(project);
   });
   it('preserves a newer snapshot and other projects when saving an older version', async () => {
     const { project, session } = await setup();

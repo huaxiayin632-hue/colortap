@@ -16,6 +16,7 @@ export interface RecoveryEntry {
   filePath: string | null;
   savedAt: string;
   version: number;
+  sharedAssets?: true;
 }
 export interface RecoveryList {
   entries: RecoveryEntry[];

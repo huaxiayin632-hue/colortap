@@ -86,6 +86,8 @@ export class LayerScene {
   private selected: string | null = null;
   private selectedLOD: number | null = null;
   private desired = 0;
+  private levelBias = 0;
+  private desiredBytes = 0;
   private needsReconcile = false;
   private filters = 0;
   private documentFilter?: CompositeFilter;
@@ -101,6 +103,10 @@ export class LayerScene {
     private readonly camera: () => Affine = () => ({ a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }),
   ) {
     this.cache = new TileTextureCache(handle, maxTextureSize, () => this.refreshSprites(), failed);
+  }
+  setTextureBudget(bytes: number): void {
+    this.cache.setBudget(bytes);
+    this.update();
   }
   setProject(project: Project): void {
     if (this.project === project) return;
@@ -553,6 +559,8 @@ export class LayerScene {
             }
         }
       }
+      this.levelBias = bias;
+      this.desiredBytes = bytes;
       if (bytes <= this.cache.budgetBytes) break;
     }
     const wantedByPlane = new Map<Map<string, Sprite>, Set<string>>();
@@ -642,6 +650,27 @@ export class LayerScene {
       ...e.sprites.keys(),
       ...(e.maskView?.sprites.keys() ?? []),
     ]);
+    // Selection first, then the amount of visible artwork each tile contributes.
+    // Sorting only changes loading order; compositing order remains unchanged.
+    const coverage = (w: Wanted) => {
+      const r = transformed(
+        {
+          ...w.tile.sourceRect,
+          x: w.tile.sourceRect.x + w.offset.x,
+          y: w.tile.sourceRect.y + w.offset.y,
+        },
+        w.entry.world,
+      );
+      return (
+        Math.max(0, Math.min(r.x + r.width, visible.x + visible.width) - Math.max(r.x, visible.x)) *
+        Math.max(0, Math.min(r.y + r.height, visible.y + visible.height) - Math.max(r.y, visible.y))
+      );
+    };
+    requests.sort(
+      (a, b) =>
+        Number(b.entry.layer.id === this.selected) - Number(a.entry.layer.id === this.selected) ||
+        coverage(b) - coverage(a),
+    );
     this.cache.request(
       requests.map(({ tile }) => ({
         asset: this.project!.assets[tile.assetId],
@@ -694,6 +723,8 @@ export class LayerScene {
     return {
       ...this.cache.stats(),
       desiredTextures: this.desired,
+      desiredRgbaBytesEstimate: this.desiredBytes,
+      levelBias: this.levelBias,
       sceneLayersCreated: this.created,
       sceneLayersRemoved: this.removed,
       displayedTiles: [...this.entries.values()].reduce((n, e) => n + e.sprites.size, 0),

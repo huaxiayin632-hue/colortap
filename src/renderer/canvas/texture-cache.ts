@@ -10,7 +10,7 @@ interface Cached {
 }
 /** Bounded decoded-image/GPU cache. Original file bytes are never modified. */
 export class TileTextureCache {
-  readonly budgetBytes = 192 * 1024 * 1024;
+  budgetBytes = 192 * 1024 * 1024;
   private entries = new Map<string, Cached>();
   private pending = new Set<string>();
   private wanted = new Set<string>();
@@ -20,6 +20,7 @@ export class TileTextureCache {
   private clock = 0;
   private failures = new Set<string>();
   private live = true;
+  private idleTrim: ReturnType<typeof setTimeout> | undefined;
   loaded = 0;
   evicted = 0;
   peakBytes = 0;
@@ -37,6 +38,10 @@ export class TileTextureCache {
   hasFailed(id: string): boolean {
     return this.failures.has(id);
   }
+  setBudget(bytes: number): void {
+    this.budgetBytes = bytes;
+    this.trim();
+  }
   request(tiles: { asset: Asset; frame: Rect }[], retained: string[] = []): void {
     this.retained = new Set(retained);
     tiles = [...new Map(tiles.map((t) => [t.asset.id, t])).values()];
@@ -49,25 +54,43 @@ export class TileTextureCache {
     );
     this.trim();
     this.pump();
+    this.scheduleIdleTrim();
   }
   private get bytes(): number {
     let n = 0;
     for (const e of this.entries.values()) n += e.bytes;
     return n;
   }
-  private trim(incoming = 0): void {
+  private trim(incoming = 0, limit = this.budgetBytes): void {
     const candidates = [...this.entries]
       .filter(([id]) => !this.wanted.has(id) && !this.retained.has(id))
       .sort((a, b) => a[1].used - b[1].used);
     let bytes = this.bytes;
     for (const [id, entry] of candidates) {
-      if (bytes + incoming <= this.budgetBytes && this.entries.size < 1024) break;
+      if (bytes + incoming <= limit && this.entries.size < 1024) break;
       entry.texture.destroy(true);
       entry.bitmap.close();
       this.entries.delete(id);
       bytes -= entry.bytes;
       this.evicted++;
     }
+  }
+  private scheduleIdleTrim(): void {
+    clearTimeout(this.idleTrim);
+    this.idleTrim = setTimeout(() => {
+      if (!this.live || this.active || this.queue.length) return;
+      const pinned = [...this.entries].reduce(
+        (sum, [id, e]) => sum + (this.wanted.has(id) || this.retained.has(id) ? e.bytes : 0),
+        0,
+      );
+      // Keep a small warm cache for reversing a pan; release obsolete high LODs at rest.
+      this.trim(
+        0,
+        pinned
+          ? Math.min(this.budgetBytes, pinned + Math.min(48 * 1024 * 1024, this.budgetBytes / 4))
+          : 0,
+      );
+    }, 2000);
   }
   private pump(): void {
     while (this.live && this.active < 4 && this.queue.length) {
@@ -80,6 +103,7 @@ export class TileTextureCache {
         this.pending.delete(id);
         this.pump();
         if (this.live) this.changed();
+        this.scheduleIdleTrim();
       });
     }
   }
@@ -117,7 +141,7 @@ export class TileTextureCache {
       this.peakBytes = Math.max(this.peakBytes, this.bytes);
       this.changed();
     } catch (error) {
-      if (this.live) {
+      if (this.live && this.wanted.has(tile.asset.id)) {
         this.failures.add(tile.asset.id);
         this.failed(error instanceof Error ? error.message : '图层分块读取失败');
         this.changed();
@@ -141,7 +165,11 @@ export class TileTextureCache {
   }
   dispose(): void {
     this.live = false;
+    clearTimeout(this.idleTrim);
     this.queue = [];
+    this.wanted.clear();
+    this.retained.clear();
+    this.failures.clear();
     for (const entry of this.entries.values()) {
       entry.texture.destroy(true);
       entry.bitmap.close();
