@@ -20,6 +20,7 @@ import CameraPanel from './camera/CameraPanel.vue';
 import { createCommands, commandsKey } from './commands/registry';
 import CommandOverlays from './commands/CommandOverlays.vue';
 import { playtestCodes } from './commands/context';
+import { textureBudgetMiB, textureBudgets } from './canvas/preferences';
 
 const editor = createEditor();
 const workspace = useWorkspace();
@@ -100,6 +101,7 @@ const snapshotLabel = computed(() =>
 const stageMetrics = computed(() => {
   editor.zoom.value;
   editor.sceneRevision.value;
+  editor.performanceSample.value;
   return editor.stage.value?.metrics() ?? null;
 });
 
@@ -892,6 +894,16 @@ onBeforeUnmount(() => {
               {{ stageMetrics?.layers?.evicted ?? 0 }}
             </dd>
           </div>
+          <div>
+            <dt><label for="texture-budget">纹理预算（本机）</label></dt>
+            <dd>
+              <select id="texture-budget" v-model.number="textureBudgetMiB">
+                <option v-for="budget in textureBudgets" :key="budget" :value="budget">
+                  {{ budget }} MiB{{ budget === 192 ? '（默认）' : '' }}
+                </option>
+              </select>
+            </dd>
+          </div>
           <div v-if="editor.lastImport.value">
             <dt>最近导入 / 后台峰值内存</dt>
             <dd>
@@ -917,6 +929,7 @@ onBeforeUnmount(() => {
         <p class="help-text">
           记录反映当前工程与采样窗口。纹理占用按 RGBA 估算，不含驱动、屏幕与 Pixi
           内部滤镜缓存，不能视为总显存。路径显现使用矢量分段遮罩，无全画板位图蒙版。
+          提高预算可保留更清晰的图块，也会增加内存占用；若出现卡顿或图形设备重置，请恢复默认。
         </p>
         <div class="modal-actions">
           <button :disabled="editor.busy.value" @click="editor.exportPerformance()">

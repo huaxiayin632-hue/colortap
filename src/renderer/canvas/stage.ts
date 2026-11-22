@@ -19,6 +19,7 @@ import { OutlineScene } from '../reveals/outline-scene';
 import type { CameraController } from '../camera/controller';
 import { cameraMatrix } from '../../core/camera';
 import { inverse, point, type Affine } from '../../core/layers';
+import { textureBudgetMiB } from './preferences';
 
 export class EditorStage {
   readonly viewport = new Viewport();
@@ -66,10 +67,15 @@ export class EditorStage {
   capabilities: RenderCapabilities | null = null;
   onChange: (() => void) | null = null;
   onContextLost: (() => void) | null = null;
-  constructor(private readonly host: HTMLElement) {}
+  constructor(private readonly host: HTMLElement) {
+    this.watchers.push(
+      watch(textureBudgetMiB, (value) => this.scene?.setTextureBudget(value * 1024 * 1024)),
+    );
+  }
   async initialize(): Promise<void> {
     await this.app.init({
       preference: 'webgl',
+      powerPreference: 'high-performance',
       autoStart: false,
       sharedTicker: false,
       useBackBuffer: true,
@@ -398,6 +404,7 @@ export class EditorStage {
         () => this.cameraTransform,
       );
       this.illustration.addChild(this.scene.root, this.scene.selection);
+      this.scene.setTextureBudget(textureBudgetMiB.value * 1024 * 1024);
       if (this.chartScene) this.artwork.addChild(this.chartScene.root);
       if (this.outlineScene) this.illustration.addChild(this.outlineScene.root);
       if (this.revealScene) this.illustration.addChild(this.revealScene.root);

@@ -209,7 +209,9 @@ try {
       while (true) {
         originalProject = JSON.parse(
           await fs.readFile(
-            path.join(profile, 'recoveries', first.id, first.token, 'project.rcproj'),
+            first.sharedAssets
+              ? path.join(profile, 'recoveries', first.id, first.token + '.rcproj')
+              : path.join(profile, 'recoveries', first.id, first.token, 'project.rcproj'),
             'utf8',
           ),
         );
@@ -312,6 +314,8 @@ try {
       await start();
       await restore();
       assert.equal(await page.getByLabel('BPM', { exact: true }).inputValue(), '141');
+      const warnings = page.getByRole('button', { name: '关闭兼容提示', exact: true });
+      if (await warnings.isVisible()) await warnings.click();
       assert.equal(await fs.readFile(official, 'utf8'), savedText);
     },
   );
@@ -365,6 +369,8 @@ try {
       await textures();
       await page.locator('[data-testid=waveform][data-ready=true]').waitFor();
       assert.equal(await page.getByLabel('BPM', { exact: true }).inputValue(), '141');
+      const compatibility = page.getByRole('button', { name: '关闭兼容提示', exact: true });
+      if (await compatibility.isVisible()) await compatibility.click();
     },
   );
   await check(
