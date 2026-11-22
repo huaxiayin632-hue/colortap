@@ -203,7 +203,7 @@ try {
     assert.equal(Number(await page.getByLabel('BPM', { exact: true }).inputValue()), 141);
     return { verifiedAssets: Object.keys(saved.assets).length, copy };
   });
-  await check('切工程释放全部纹理；预算跨重启记忆，无静止重绘', async () => {
+  await check('切工程释放全部纹理；预算页面重载记忆，无静止重绘', async () => {
     await budget(256);
     await page.getByRole('button', { name: '新建', exact: true }).click();
     await page.getByLabel('新工程名称').fill('空工程资源检查');
