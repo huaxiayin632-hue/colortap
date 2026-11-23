@@ -20,6 +20,8 @@ import type { CameraController } from '../camera/controller';
 import { cameraMatrix } from '../../core/camera';
 import { inverse, point, type Affine } from '../../core/layers';
 import { textureBudgetMiB } from './preferences';
+import { CompositingMetrics } from './compositing-metrics';
+import './compositing-metrics';
 
 export class EditorStage {
   readonly viewport = new Viewport();
@@ -178,6 +180,7 @@ export class EditorStage {
     if (this.scene) this.scene.selection.visible = this.chartScene?.chart.mode.value === 'edit';
     this.revealScene?.draw();
     this.scene?.flush();
+    (this.app.renderer.filter as CompositingMetrics).beginFrame();
     this.app.render();
     this.host.dataset.renderCount = String(++this.renderCount);
   }
@@ -514,6 +517,9 @@ export class EditorStage {
     return {
       capabilities: this.capabilities,
       gpu: this.gpu,
+      compositing: this.initialized
+        ? (this.app.renderer.filter as CompositingMetrics).snapshot()
+        : null,
       rendering: { frames: this.renderCount, pending: this.rendering.pending, mode: 'on-demand' },
       previewFrames: this.renderFrames.snapshot(),
       layers: this.scene?.stats() ?? null,
