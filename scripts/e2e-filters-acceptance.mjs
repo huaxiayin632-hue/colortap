@@ -219,8 +219,17 @@ try {
     await ready();
     await button('撤销').click();
     await ready();
-    // Undo restores document data and may clear the current command target.
-    await row.click();
+    // PSD groups containing locked children are intentionally not deletable.
+    const deletable = (layer) =>
+      !layer.locked &&
+      (layer.kind !== 'group' ||
+        layer.childrenBottomToTop.every((id) => deletable(project.layers[id])));
+    const removable = Object.values(project.layers).find(
+      (l) => l.kind === 'group' && !l.clippingBaseId && deletable(l),
+    );
+    assert.ok(removable);
+    await page.locator(`[data-layer-id="${removable.id}"]`).click();
+    await ready();
     assert.ok(await button('删除选中图层或分组').isEnabled());
     await button('删除选中图层或分组').click();
     await ready();
