@@ -17,6 +17,8 @@ import { equalData, sameProjectParts } from '../../core/project';
 import { fanPolygon } from '../../core/fan';
 import { CompositeFilter } from './composite-filter';
 import { supportedBlend } from '../../core/compositing';
+import { compositeRoute, normalSubtrees } from '../../core/composite-route';
+import { sourceAtop } from './source-atop';
 
 function intersects(a: Rect, b: Rect): boolean {
   return (
@@ -60,6 +62,9 @@ interface SceneLayer {
   sprites: Map<string, Sprite>;
   filter?: CompositeFilter;
   filterKey?: string;
+  directClipped?: boolean;
+  normalSubtree?: boolean;
+  hasReveal?: boolean;
   clippingStack?: {
     container: Container;
     filter: CompositeFilter;
@@ -89,7 +94,6 @@ export class LayerScene {
   private levelBias = 0;
   private desiredBytes = 0;
   private needsReconcile = false;
-  private filters = 0;
   private documentFilter?: CompositeFilter;
   private disposed = false;
   private created = 0;
@@ -151,6 +155,8 @@ export class LayerScene {
       this.documentFilter = undefined;
     }
     this.root.filters = this.documentFilter ? [this.documentFilter] : [];
+    const normal = normalSubtrees(project);
+    const revealed = new Set(Object.values(project.reveals).map((c) => c.layerId));
     const next = new Map<string, SceneLayer>();
     const visit = (
       ids: string[],
@@ -252,25 +258,9 @@ export class LayerScene {
           e.clippingStack.container.destroy();
           e.clippingStack = undefined;
         }
-        const mode = deferred ? 'normal' : supportedBlend(l.blendMode);
-        const needsFilter =
-          l.clippingBaseId ||
-          mode !== 'normal' ||
-          l.rasterMask?.enabled ||
-          (l.kind === 'group' &&
-            (l.opacity !== 1 ||
-              l.isolation === 'isolated' ||
-              Object.values(project.reveals).some((c) => c.layerId === id)));
-        const filterKey = needsFilter ? `${mode}:${!!l.clippingBaseId}` : undefined;
-        if (e.filterKey !== filterKey) {
-          e.composite.filters = [];
-          e.filter?.destroy();
-          e.filter = filterKey ? new CompositeFilter(mode, !!l.clippingBaseId) : undefined;
-          e.filterKey = filterKey;
-        }
-        e.composite.filters = e.filter ? [e.filter] : [];
-        e.container.alpha = e.filter || deferred ? 1 : l.opacity;
-        if (e.filter) e.filter.alpha = deferred ? 1 : l.opacity;
+        e.normalSubtree = normal.has(id);
+        e.hasReveal = revealed.has(id);
+        this.syncComposite(e, l.opacity, false);
         if (l.rasterMask?.enabled) {
           if (!e.maskView) {
             const root = new Container(),
@@ -302,14 +292,38 @@ export class LayerScene {
     visit(project.rootLayersBottomToTop, this.root, matrix(identityTransform()), true);
     for (const [id, entry] of this.entries) if (!next.has(id)) this.destroyEntry(entry);
     this.entries = next;
-    this.filters =
-      Number(!!this.documentFilter) +
-      [...next.values()].reduce((n, e) => n + Number(!!e.filter) + Number(!!e.clippingStack), 0);
     this.update();
   }
   private clearSprites(sprites: Map<string, Sprite>): void {
     for (const sprite of sprites.values()) sprite.destroy();
     sprites.clear();
+  }
+  private syncComposite(e: SceneLayer, alpha: number, dynamicMask: boolean): void {
+    const deferred = !!e.clippingStack;
+    const route = compositeRoute(
+      e.layer,
+      alpha,
+      deferred,
+      dynamicMask,
+      !!e.normalSubtree,
+      !!e.hasReveal,
+      !!this.documentFilter,
+    );
+    if (e.filterKey !== route.key) {
+      e.composite.filters = [];
+      e.filter?.destroy();
+      e.filter = route.key ? new CompositeFilter(route.mode, !!e.layer.clippingBaseId) : undefined;
+      e.filterKey = route.key;
+      e.composite.filters = e.filter ? [e.filter] : [];
+      this.update();
+    }
+    if (e.directClipped !== route.directClipped) {
+      e.directClipped = route.directClipped;
+      for (const sprite of e.sprites.values())
+        sprite.blendMode = e.directClipped ? sourceAtop : 'normal';
+    }
+    e.container.alpha = e.filter || deferred ? 1 : alpha;
+    if (e.filter) e.filter.alpha = deferred ? 1 : alpha;
   }
   private destroyEntry(e: SceneLayer): void {
     e.filter?.destroy();
@@ -348,6 +362,7 @@ export class LayerScene {
       const parent = e.parentId ? this.entries.get(e.parentId) : undefined;
       e.world = parent ? multiply(parent.world, local) : local;
       const alpha = e.layer.opacity * (state?.alpha ?? 1);
+      this.syncComposite(e, alpha, !!state?.mask);
       e.container.visible = e.layer.enabled && alpha > 0;
       const baseVisible = e.layer.clippingBaseId
         ? this.entries.get(e.layer.clippingBaseId)?.visible
@@ -361,8 +376,7 @@ export class LayerScene {
         e.clippingStack.filter.alpha = alpha;
         e.clippingStack.container.visible = visible;
         e.clippingStack.parentWorld = parent?.world ?? matrix(identityTransform());
-      } else if (e.filter) e.filter.alpha = alpha;
-      else e.container.alpha = alpha;
+      }
       const mask = state?.mask;
       if (mask?.kind === 'path') {
         if (
@@ -595,6 +609,7 @@ export class LayerScene {
             const texture = this.cache.get(w.tile.assetId);
             if (texture && !sprites.has(w.tile.assetId)) {
               const sprite = new Sprite(texture);
+              if (!w.isMask && entry.directClipped) sprite.blendMode = sourceAtop;
               w.parent.addChild(sprite);
               sprites.set(w.tile.assetId, sprite);
             }
@@ -720,6 +735,12 @@ export class LayerScene {
     return null;
   }
   stats() {
+    const filters =
+      Number(!!this.documentFilter) +
+      [...this.entries.values()].reduce(
+        (n, e) => n + Number(!!e.filter) + Number(!!e.clippingStack),
+        0,
+      );
     return {
       ...this.cache.stats(),
       desiredTextures: this.desired,
@@ -731,7 +752,8 @@ export class LayerScene {
       selectedLevel: this.selectedLOD,
       isolatedGroups: [...this.entries.values()].filter((e) => e.layer.kind === 'group' && e.filter)
         .length,
-      compositeFilters: this.filters,
+      compositeFilters: filters,
+      directClippedLayers: [...this.entries.values()].filter((e) => e.directClipped).length,
       vectorMasks: [...this.entries.values()].filter((e) => !!e.reveal.mask).length,
       rasterMasks: [...this.entries.values()].filter((e) => !!e.maskView).length,
       clippingStacks: [...this.entries.values()].filter((e) => !!e.clippingStack).length,
@@ -753,7 +775,7 @@ export class LayerScene {
         0,
       ),
       filterViewportRgbaBytesEstimate:
-        this.filters *
+        filters *
         this.viewport.screen.width *
         this.viewport.screen.height *
         4 *
@@ -768,7 +790,6 @@ export class LayerScene {
     for (const e of this.entries.values()) this.destroyEntry(e);
     this.root.removeChildren();
     this.entries.clear();
-    this.filters = 0;
   }
   dispose(): void {
     this.disposed = true;

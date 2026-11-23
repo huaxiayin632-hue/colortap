@@ -881,6 +881,13 @@ onBeforeUnmount(() => {
             <dd>{{ stageMetrics?.rendering?.frames ?? 0 }}</dd>
           </div>
           <div>
+            <dt>上一绘制帧：滤镜 / 背景复制</dt>
+            <dd>
+              {{ stageMetrics?.compositing?.filterPasses ?? 0 }} /
+              {{ stageMetrics?.compositing?.backdropCopies ?? 0 }}
+            </dd>
+          </div>
+          <div>
             <dt>受管纹理 / RGBA 估算</dt>
             <dd>
               {{ stageMetrics?.layers?.residentTextures ?? 0 }} /
@@ -930,6 +937,7 @@ onBeforeUnmount(() => {
           记录反映当前工程与采样窗口。纹理占用按 RGBA 估算，不含驱动、屏幕与 Pixi
           内部滤镜缓存，不能视为总显存。路径显现使用矢量分段遮罩，无全画板位图蒙版。
           提高预算可保留更清晰的图块，也会增加内存占用；若出现卡顿或图形设备重置，请恢复默认。
+          滤镜次数为上一绘制帧的实际处理，不含蒙版图像生成、模板遮罩或最终呈现，不代表帧率。
         </p>
         <div class="modal-actions">
           <button :disabled="editor.busy.value" @click="editor.exportPerformance()">
